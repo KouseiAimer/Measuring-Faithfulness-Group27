@@ -1,0 +1,38 @@
+# Large experiment outputs and archives
+/ablation/
+/final_results/
+/ablation.zip
+/final_results.zip
+
+# Result directories produced when running from the project subfolder
+/parametric-faithfulness-main/ablation/
+/parametric-faithfulness-main/final_results/
+/parametric-faithfulness-main/results/
+/parametric-faithfulness-main/ablations/
+/parametric-faithfulness-main/final_cot/
+/parametric-faithfulness-main/atomic_cot/
+/parametric-faithfulness-main/chkp/
+/parametric-faithfulness-main/gen_cap/
+/parametric-faithfulness-main/mmlu_results/
+/parametric-faithfulness-main/gsm8k_results/
+/parametric-faithfulness-main/mistake_results/
+/parametric-faithfulness-main/mistake_stats/
+
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Local environment and secrets
+.env
+.env.*
+*.env
+*.token
+hf_token*
+
+# Local editor/system files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
