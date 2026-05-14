@@ -1,33 +1,32 @@
-# Codebase for the paper "Measuring Faithfulness of Chains of Thought by Unlearning Reasoning Steps"
+# C-Eval 中文版实验说明
 
-Preprint: Tutek, M., Chaleshtori, F. H., Marasović, A., & Belinkov, Y. (2025). Measuring Faithfulness of Chains of Thought by Unlearning Reasoning Steps. [[arXiv]](https://arxiv.org/abs/2502.14829)
+本目录是在 C-Eval 中文选择题数据集上复现论文
+`Measuring Faithfulness of Chains of Thought by Unlearning Reasoning Steps`
+的简化版本。主入口是 `unlearn-cn.py`。
 
-![Faithfulness by Unlearning Reasoning Steps](figures/fig1_v2.png "Faithfulness by Unlearning Reasoning Steps")
+默认配置：
 
-Codebase is given as-is, instructions pending.
-Main file for running experiments is `unlearn.py`. The NPO method has been adapted from the [original repository](https://github.com/licong-lin/negative-preference-optimization).
+- 数据集：`ceval/ceval-exam`
+- 默认任务：`ceval`，会从 C-Eval 全科验证集中按随机种子抽样
+- 默认样本数：`--max_samples 250`，与原项目每个数据集最多 250 条保持一致
+- 模型：`Qwen/Qwen3-8B`、`Qwen/Qwen3-3B`、`Qwen/Qwen3-1.7B`
+- 中文 CoT：使用中文 prompt，并对中文标点做步骤切分
 
-Sample run script: `python unlearn.py --model_name meta-llama/Llama-3.2-3B-Instruct --strategy sentencize --stepwise --dataset sqa --lr 3e-05 --pos --ff2 --method npo_KL`
+如果你的 Hugging Face 环境中 3B 仓库名不同，直接把 `--model_name` 换成本地模型路径或实际仓库名即可。
 
-## Paper graphs, result files and analysis notebooks
+示例：
 
-To recompute results, you need final & ablation result files (`results`,`ablations`) which are too large to share via git. Please send an email to me [\[here\]](mailto:martin.tutek@gmail.com) and I'll share the google drive links with you.
+```powershell
+cd parametric-faithfulness-main-cn
+python unlearn-cn.py --model_name Qwen/Qwen3-8B --dataset ceval --strategy sentencize --stepwise --lr 1e-5 --ff2 --method npo_KL
+python unlearn-cn.py --model_name Qwen/Qwen3-3B --dataset ceval --strategy sentencize --stepwise --lr 1e-5 --ff2 --method npo_KL
+python unlearn-cn.py --model_name Qwen/Qwen3-1.7B --dataset ceval --strategy sentencize --stepwise --lr 3e-5 --ff2 --method npo_KL
+```
 
-### Add mistake [Lanham et al, 2023](https://arxiv.org/abs/2307.13702)
-We reuse the prompts from [Lanham et al](https://arxiv.org/abs/2307.13702) to add mistakes into CoT steps. A reproduction of this with GPT-4o-mini can be found in [Adding mistakes repro](Adding%20mistakes%20repro.ipynb). The minimal results of this setup can be found in [minimal_mistake_results](minimal_mistake_results).
+只跑单个科目时使用 `ceval-<subject>`，例如：
 
-### Annotation study
+```powershell
+python unlearn-cn.py --model_name Qwen/Qwen3-1.7B --dataset ceval-computer_network --max_samples 100 --lr 3e-5 --ff2 --method npo_KL
+```
 
-The annotation study data files, including all the per-model-dataset bins can be found in [annotation_data](annotation_data).
-The code used to select instances for the study is in [Generate_annotation_data.ipynb](Generate_annotation_data.ipynb).
-
-The full results of the annotation study can be fond in [annotation_results](annotation_results).
-The follow up analysis can be found in [Annotation analysis.ipynb](Annotation%20analysis.ipynb).
-
-### Post-unlearning CoT LLM-as-judge
-
-The code using GPT-4o as a judge of whether CoTs have changed the answer they argue for before and after unlearning can be found in [CoT LLM as judge.ipynb](CoT%20LLM%20as%20judge.ipynb).
-The LM judgements, along with the single-sentence explanations (which were not analysed in the paper) are in [LM_judge_cot](LM_judge_cot).
-
-### Plots & tables
-Most of the code used to generate plots and tables from the paper, along with the plots and tables themselves, can be found in [Ablations.ipynb](Ablations.ipynb) and [Generate_CoT_heatmaps.ipynb](Generate_CoT_heatmaps.ipynb).
+输出会写入本目录下的 `final_cot/`、`final_results/` 等文件夹。首次运行会生成 CoT 缓存；如果需要重新随机生成，加入 `--new_cot`。

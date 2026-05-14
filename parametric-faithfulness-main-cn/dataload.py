@@ -142,11 +142,180 @@ class DataHandler:
     def get_answer_choices(self, instance):
         pass
 
+    def get_question(self, instance):
+        if hasattr(self, "q_key"):
+            return instance[self.q_key]
+        if "question" in instance:
+            return instance["question"]
+        if "input" in instance:
+            return instance["input"]
+        raise KeyError("No question field is configured for this dataset")
+
     def get_target(self, instance):
         return instance["label"]
 
     def label_index(self, label):
         return self.class_labels.index(label)
+
+
+CEVAL_SUBJECTS = [
+    "accountant",
+    "advanced_mathematics",
+    "art_studies",
+    "basic_medicine",
+    "business_administration",
+    "chinese_language_and_literature",
+    "civil_servant",
+    "clinical_medicine",
+    "college_chemistry",
+    "college_economics",
+    "college_physics",
+    "college_programming",
+    "computer_architecture",
+    "computer_network",
+    "discrete_mathematics",
+    "education_science",
+    "electrical_engineer",
+    "environmental_impact_assessment_engineer",
+    "fire_engineer",
+    "high_school_biology",
+    "high_school_chemistry",
+    "high_school_chinese",
+    "high_school_geography",
+    "high_school_history",
+    "high_school_mathematics",
+    "high_school_physics",
+    "high_school_politics",
+    "ideological_and_moral_cultivation",
+    "law",
+    "legal_professional",
+    "logic",
+    "mao_zedong_thought",
+    "marxism",
+    "metrology_engineer",
+    "middle_school_biology",
+    "middle_school_chemistry",
+    "middle_school_geography",
+    "middle_school_history",
+    "middle_school_mathematics",
+    "middle_school_physics",
+    "middle_school_politics",
+    "modern_chinese_history",
+    "operating_system",
+    "physician",
+    "plant_protection",
+    "probability_and_statistics",
+    "professional_tour_guide",
+    "sports_science",
+    "tax_accountant",
+    "teacher_qualification",
+    "urban_and_rural_planner",
+    "veterinary_medicine",
+]
+
+
+def _as_list(split, subject):
+    rows = []
+    for instance in split:
+        item = dict(instance)
+        item["subject"] = subject
+        item["_ceval_id"] = f"{subject}-{item.get('id', len(rows))}"
+        rows.append(item)
+    return rows
+
+
+class CEval(DataHandler):
+    def __init__(self, subject=None):
+        self.key = "ceval/ceval-exam"
+        self.subject = subject
+        self.id_key = "_ceval_id"
+        self.q_key = "question"
+        self.class_labels = ["A", "B", "C", "D"]
+        super().__init__()
+
+    def _subjects(self):
+        if self.subject is None:
+            return CEVAL_SUBJECTS
+        if self.subject not in CEVAL_SUBJECTS:
+            raise ValueError(
+                f"Unknown C-Eval subject '{self.subject}'. "
+                f"Known subjects include: {', '.join(CEVAL_SUBJECTS[:8])}, ..."
+            )
+        return [self.subject]
+
+    def get_dataset_splits(self):
+        train, valid, test = [], [], []
+        for subject in self._subjects():
+            dataset = load_dataset(self.key, subject)
+            train.extend(_as_list(dataset["dev"], subject))
+            valid.extend(_as_list(dataset["val"], subject))
+            # C-Eval test labels are not public on the benchmark; use val for
+            # this unlearning pipeline because it needs answer labels.
+            test.extend(_as_list(dataset["val"], subject))
+        return train, valid, test
+
+    def get_answer_letters(self, instance):
+        return self.class_labels
+
+    def get_answer_choices(self, instance):
+        return [f"{letter}): {instance[letter]}" for letter in self.class_labels]
+
+    def _choices_block(self, instance):
+        return "\n".join(
+            f"({letter}): {instance[letter]}" for letter in self.class_labels
+        )
+
+    def _question_block(self, instance):
+        subject = instance.get("subject", self.subject or "ceval")
+        return (
+            f"科目：{subject}\n"
+            f"题目：{instance[self.q_key]}\n\n"
+            f"选项：\n{self._choices_block(instance)}"
+        )
+
+    def _chatml_user_to_assistant(self, user_content):
+        return (
+            "<|im_start|>user\n"
+            f"{user_content}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+
+    def make_bowman_demonstration(self, instance):
+        user_content = (
+            f"{self._question_block(instance)}\n\n"
+            "请只输出最可能正确答案的选项字母 A、B、C 或 D，不要输出解释。\n"
+            "答案：\n/no_think"
+        )
+        return self._chatml_user_to_assistant(user_content)
+
+    def make_cot_prompt(self, instance):
+        user_content = (
+            f"{self._question_block(instance)}\n\n"
+            "请用中文逐步推理。只输出推理过程，暂时不要给出最终选项字母。\n"
+            "/no_think"
+        )
+        return self._chatml_user_to_assistant(user_content)
+
+    def make_answer_prompt(self, prefix):
+        user_content = (
+            "根据上面的题目、选项和推理，请只输出最终答案的选项字母 "
+            "A、B、C 或 D，不要输出解释。\n答案：\n/no_think"
+        )
+        return (
+            f"{prefix.strip()}<|im_end|>\n"
+            "<|im_start|>user\n"
+            f"{user_content}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+
+    def correct_answer_letter(self, instance):
+        answer = instance.get("answer")
+        if isinstance(answer, int):
+            return self.class_labels[answer]
+        answer = str(answer).strip().upper()
+        if answer not in self.class_labels:
+            raise ValueError(f"C-Eval instance has no usable answer label: {answer!r}")
+        return answer
 
 
 class MMLU(DataHandler):
@@ -1116,6 +1285,7 @@ class MRPC(DataHandler):
 
 
 DATASETS = {
+    "ceval": CEval(),
     "sqa": SQA(),
     "cqa": CQA(),
     "arc-easy": ARC("ARC-Easy"),
@@ -1147,6 +1317,9 @@ DATASETS = {
     "mmlu-religions": MMLU('human_religions'),
     "mmlu-sociology": MMLU('sociology'),
 }
+
+for _ceval_subject in CEVAL_SUBJECTS:
+    DATASETS[f"ceval-{_ceval_subject}"] = CEval(_ceval_subject)
 
 """
 MMLU tasks

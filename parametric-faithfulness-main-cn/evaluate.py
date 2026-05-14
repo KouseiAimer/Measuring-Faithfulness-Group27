@@ -1,3 +1,6 @@
+import re
+import random
+import gc
 import nltk
 
 import torch
@@ -14,13 +17,49 @@ BOWMAN_ASSISTANT_ANSWER_PREFIX = "Assistant: The single, most likely answer is (
 
 ANSWER_LETTERS = ["A", "B", "C", "D", "E"] # No MCQA dataset considered has more than 5
 
+def decode_new_tokens(tokenizer, token_ids):
+    return tokenizer.decode(token_ids, skip_special_tokens=True)
+
+def answer_letter_token_ids(tokenizer, answer_letters):
+    ids = []
+    for letter in answer_letters:
+        encoded = tokenizer.encode(letter, add_special_tokens=False)
+        if not encoded:
+            raise ValueError(f"Could not encode answer letter {letter!r}")
+        ids.append(encoded[0])
+    return ids
+
+def segment_generated_cot(cot_text):
+    cot_text = cot_text.strip()
+    if not cot_text:
+        return []
+
+    has_cjk = re.search(r"[\u4e00-\u9fff]", cot_text) is not None
+    if has_cjk:
+        pieces = []
+        for block in re.split(r"\n+", cot_text):
+            block = block.strip()
+            if not block:
+                continue
+            pieces.extend(
+                part.strip()
+                for part in re.split(r"(?<=[\u3002\uff01\uff1f!?\uff1b;])\s*", block)
+                if part.strip()
+            )
+        return pieces or [cot_text]
+
+    try:
+        pieces = [part.strip() for part in nltk.sent_tokenize(cot_text) if part.strip()]
+    except LookupError:
+        pieces = [part.strip() for part in re.split(r"(?<=[.!?])\s+", cot_text) if part.strip()]
+    return pieces or [cot_text]
+
 def answer_probabilities(model, tokenizer, dh, instance):
     device = model.device
     with torch.no_grad():
         n_options = len(dh.get_answer_letters(instance))
         answer_letters = ANSWER_LETTERS[:n_options]
-        answer_indices = [tokenizer.encode(L, add_special_tokens=False)[0] 
-                    for L in answer_letters]
+        answer_indices = answer_letter_token_ids(tokenizer, answer_letters)
 
         prompt = dh.make_bowman_demonstration(instance)
         answer_inputs = tokenizer.encode(prompt, padding=False, add_special_tokens=False, return_tensors='pt').to(device)
@@ -39,7 +78,7 @@ def answer_probabilities(model, tokenizer, dh, instance):
         # 2.2 take only newly generated output
         answer_output = answer_output[0][0]
         answer_new_output = answer_output[answer_inputs.shape[-1]:]
-        answer_new_output_text = tokenizer.decode(answer_new_output)
+        answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
         
         return answer_new_output_text, letter_probs, predicted_letter_index
 
@@ -58,7 +97,7 @@ def complete(model, tokenizer, prompt, max_new_tokens=300, temperature=0., do_sa
     # 2 take only newly generated output
     output = outputs[0][0]
     new_output = output[inputs.shape[-1]:]
-    new_output_text = tokenizer.decode(new_output)
+    new_output_text = decode_new_tokens(tokenizer, new_output)
     if split_newline:
       new_output_text = new_output_text.strip().split("\n\n")[0] 
     
@@ -68,8 +107,7 @@ def letter_completion(model, tokenizer, prompt, N):
   with torch.no_grad():
     device = model.device
     answer_letters = ANSWER_LETTERS[:N]
-    answer_indices = [tokenizer.encode(L, add_special_tokens=False)[0] 
-                    for L in answer_letters]
+    answer_indices = answer_letter_token_ids(tokenizer, answer_letters)
 
 
     # Step 5: make answer prompt
@@ -87,11 +125,11 @@ def letter_completion(model, tokenizer, prompt, N):
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = tokenizer.decode(answer_new_output)
+    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
     
     return letter_probs, predicted_letter_index
 
-def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentencize=True):
+def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentencize=True, max_instances=250, seed=1001):
     print(f"Generating new CoTs for {model_id}, {dataset_id}, sentencize={sentencize}")
     model, _ = load_model_and_tokenizer(model_id)
     DH = DATASETS[dataset_id]
@@ -100,8 +138,13 @@ def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentenci
 
     instance_info = []
     
-    for idx, instance in tqdm(enumerate(test)): # only take 250 instances from each dataset for comparability
-        if idx >= 250: break # 250 _nocot
+    indices = list(range(len(test)))
+    random.Random(seed).shuffle(indices)
+    if max_instances is not None:
+        indices = indices[:max_instances]
+
+    for idx, instance_idx in tqdm(enumerate(indices), total=len(indices)):
+        instance = test[instance_idx]
         _, nocot_probs, _ = answer_probabilities(
             model, tokenizer, DH, instance)
 
@@ -111,10 +154,10 @@ def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentenci
         cot_probs, _  = generation_fixed_cot(model, tokenizer, DH, instance, cot)
         segmented_cot = None
         if sentencize:
-            segmented_cot = nltk.sent_tokenize(cot)
+            segmented_cot = segment_generated_cot(cot)
         inst_details = {
             'id': instance[DH.id_key],
-            'question': instance[DH.q_key],
+            'question': DH.get_question(instance),
             'correct_letter': DH.correct_answer_letter(instance),
             'cot_prompt': DH.make_cot_prompt(instance),
             'cot': cot,
@@ -122,11 +165,16 @@ def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentenci
             'nocot_probs': nocot_probs.tolist(),
             'cot_probs': cot_probs.tolist(),
             'segmented_cot': segmented_cot, 
+            'subject': instance.get('subject'),
             'raw_instance': instance,
         }
         if idx == 1:
           pprint(inst_details)
         instance_info.append(inst_details)
+    del model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return instance_info
 
 def generation_fixed_cot(model, tokenizer, dh, instance, cot_text):
@@ -134,8 +182,7 @@ def generation_fixed_cot(model, tokenizer, dh, instance, cot_text):
     device = model.device
     n_options = len(dh.get_answer_letters(instance))
     answer_letters = ANSWER_LETTERS[:n_options]
-    answer_indices = [tokenizer.encode(L, add_special_tokens=False)[0] 
-                    for L in answer_letters]
+    answer_indices = answer_letter_token_ids(tokenizer, answer_letters)
     cot_prompt = dh.make_cot_prompt(instance)
 
     cot_text = cot_text.strip().split("\n\n")[0] # Only up to double newline
@@ -156,7 +203,7 @@ def generation_fixed_cot(model, tokenizer, dh, instance, cot_text):
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = tokenizer.decode(answer_new_output)
+    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
     
     return letter_probs, predicted_letter_index
 
@@ -166,8 +213,7 @@ def generate(model, tokenizer, instance):
     # Step 1: make answer prompt
     n_options = len(instance['cot_probs'])
     answer_letters = ANSWER_LETTERS[:n_options]
-    answer_indices = [tokenizer.encode(L, add_special_tokens=False)[0] 
-                    for L in answer_letters]
+    answer_indices = answer_letter_token_ids(tokenizer, answer_letters)
 
     DELIM = "\n\n"
     answer_prompt = DELIM.join([instance['question'], instance['options']])
@@ -188,7 +234,7 @@ def generate(model, tokenizer, instance):
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = tokenizer.decode(answer_new_output)
+    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
     
     return answer_new_output_text, letter_probs, predicted_letter_index
 
@@ -218,7 +264,7 @@ def generate_cot(model, tokenizer, instance, max_new_tokens=300, temperature=0.,
     # 2 take only newly generated output
     cot_output = cot_output[0][0]
     cot_new_output = cot_output[answer_inputs.shape[-1]:]
-    cot_new_output_text = tokenizer.decode(cot_new_output)
+    cot_new_output_text = decode_new_tokens(tokenizer, cot_new_output)
     cot_new_output_text = cot_new_output_text.strip().split("\n\n")[0] 
     
     return cot_new_output_text, answer_prompt
@@ -229,8 +275,7 @@ def cot_generate(model, tokenizer, instance, max_new_tokens=300, temperature=0.,
 
     n_options = len(instance['cot_probs'])
     answer_letters = ANSWER_LETTERS[:n_options]
-    answer_indices = [tokenizer.encode(L, add_special_tokens=False)[0] 
-                      for L in answer_letters]
+    answer_indices = answer_letter_token_ids(tokenizer, answer_letters)
 
     cot_text, cot_prompt = generate_cot(model, tokenizer, instance,
                           max_new_tokens=max_new_tokens, temperature=temperature,do_sample=do_sample)
@@ -256,13 +301,13 @@ def cot_generate(model, tokenizer, instance, max_new_tokens=300, temperature=0.,
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = tokenizer.decode(answer_new_output)
+    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
     
     return answer_new_output_text, letter_probs, predicted_letter_index,cot_text, cot_prompt
 
 def completion_probabilities(model, tokenizer, prefix, targets):
     device = model.device
-    prefix_ids = tokenizer(prefix, return_tensors="pt").input_ids.to(device) # [1, T]
+    prefix_ids = tokenizer(prefix, return_tensors="pt", add_special_tokens=False).input_ids.to(device) # [1, T]
     prefix_length = prefix_ids.size(-1)
 
     n_sequences = len(targets)
@@ -274,7 +319,7 @@ def completion_probabilities(model, tokenizer, prefix, targets):
     pad_token_id = tokenizer.pad_token_id
 
     # Convert targets to tensors, concat to inputs
-    target_ids = tokenizer(targets, padding=True, return_tensors="pt").input_ids.to(device)
+    target_ids = tokenizer(targets, padding=True, return_tensors="pt", add_special_tokens=False).input_ids.to(device)
 
     # Count lengths of individual target sequences for scaling
     non_pad = target_ids != pad_token_id
@@ -292,8 +337,8 @@ def completion_probabilities(model, tokenizer, prefix, targets):
     # Yes, numeric stability
     token_probs = torch.log_softmax(relevant_logits, dim=-1)
 
-    # Set pad probabilities to one for .prod()
-    token_probs[:,:,pad_token_id] = 1.
+    # Pad tokens should contribute log-probability 0.
+    token_probs[:,:,pad_token_id] = 0.
     target_probs = token_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
     target_probs = target_probs.squeeze(1)
     seq_probs = torch.sum(target_probs, dim=1)  # prod if not in logspace

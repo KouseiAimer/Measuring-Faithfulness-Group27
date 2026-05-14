@@ -17,6 +17,10 @@ from segment import align_cot_to_pos
 IGNORE_IDX = -100
 
 model_name_dict = {
+    'Qwen3-8B': 'Qwen3-8B',
+    'Qwen3-3B': 'Qwen3-3B',
+    'Qwen3-1.7B': 'Qwen3-1.7B',
+    'Qwen3-4B': 'Qwen3-4B',
     'Phi-3-mini-4k-instruct': 'Phi-3',
     'Meta-Llama-3-8B-Instruct': 'LLaMA-3',
     'Llama-3.2-3B-Instruct': 'LLaMA-3-3B',
@@ -36,18 +40,36 @@ def cache_cots(dataset_cots, root, model_id, dataset_id, seed, temp):
     for line in dataset_cots:
       outfile.write(json.dumps(line) + "\n")
 
-def load_or_generate_dataset_cots(model_id, tokenizer, dataset_id, seed, temperature, force_generate=False, sentencize=True, atomic=False):
+def sample_cots(cot_data, max_instances, seed):
+    if max_instances is None or max_instances <= 0 or len(cot_data) <= max_instances:
+        return cot_data
+    rng = random.Random(seed)
+    indices = list(range(len(cot_data)))
+    rng.shuffle(indices)
+    indices = sorted(indices[:max_instances])
+    return [cot_data[idx] for idx in indices]
+
+def load_or_generate_dataset_cots(model_id, tokenizer, dataset_id, seed, temperature, force_generate=False, sentencize=True, atomic=False, max_instances=250):
     root = 'final_cot' if not atomic else 'atomic_cot'
     temp = f"{temperature:.{2}}"
     short_model_id = model_id.split("/")[-1]
-    floc = f"{root}/{dataset_id}/{short_model_id}_s={seed}_t={temp}_cots.jsonl"
+    sample_suffix = f"_n={max_instances}" if max_instances is not None and max_instances > 0 else ""
+    floc = f"{root}/{dataset_id}/{short_model_id}_s={seed}_t={temp}{sample_suffix}_cots.jsonl"
     if not os.path.exists(floc) or force_generate:
-        dataset_cots = generate_dataset_cots(model_id, tokenizer, dataset_id, temperature=temperature, sentencize=sentencize)
-        cache_cots(dataset_cots, root,  short_model_id, dataset_id, seed, temp)
+        dataset_cots = generate_dataset_cots(
+            model_id,
+            tokenizer,
+            dataset_id,
+            temperature=temperature,
+            sentencize=sentencize,
+            max_instances=max_instances,
+            seed=seed,
+        )
+        cache_cots(dataset_cots, root, short_model_id, dataset_id, seed, f"{temp}{sample_suffix}")
         # Store dependent on seed/temperature
         return dataset_cots
     else:
-        return load_jsonl(floc)
+        return sample_cots(load_jsonl(floc), max_instances, seed)
 
 def left_pad_sequence(vector_list, padding_value):
     # print(vector_list)
@@ -71,7 +93,7 @@ def qcot_encoder(tokenizer, question, cot, pos_filter=False, nlp=None):
     if pos_filter:
       cot_tokens, word_to_span = align_cot_to_pos(cot, tokenizer, tokenizer.name_or_path, nlp=nlp)
     else:
-      cot_tokens = tokenizer.encode(cot, add_special_tokens=False, return_tensors='pt').squeeze()
+      cot_tokens = tokenizer.encode(cot, add_special_tokens=False, return_tensors='pt')[0]
 
     encoded_input = torch.cat((question_tokens, cot_tokens), dim=0)
 
@@ -141,7 +163,7 @@ class SegmentOTFDataset(Dataset):
 
     @staticmethod
     def targets(aten):
-        return (aten != IGNORE_IDX).sum()
+        return int((aten != IGNORE_IDX).sum().item())
 
     def __getitem__(self, idx):
         # 1. Take a forget sample at the given index
@@ -192,7 +214,7 @@ class FRCollator:
     def __init__(self, tokenizer, device):
         self.tokenizer = tokenizer
         self.device = device
-        self.pad_token_id = tokenizer.encode(tokenizer.pad_token)[0]
+        self.pad_token_id = tokenizer.pad_token_id
         # print(self.pad_token_id)
 
     def __call__(self, samples):
@@ -295,7 +317,7 @@ def cot_to_otfd(target, all, tokenizer, n=4, strategy='full', stepwise=True, ste
         
         target = make_targets(target)
 
-        retain = random.sample(all, n)
+        retain = random.sample(all, min(n, len(all)))
         # Format into dict for segment dataset by transforming content into prompt & completion
         retain = [rr for r in retain for rr in make_targets(r)]
 
@@ -316,7 +338,7 @@ def cot_to_otfd(target, all, tokenizer, n=4, strategy='full', stepwise=True, ste
 
         targets = make_targets(target, segment=segment)
 
-        retain = random.sample(all, n)
+        retain = random.sample(all, min(n, len(all)))
         # Format into dict for segment dataset by transforming content into prompt & completion
         retain = [rr for r in retain for rr in make_targets(r, segment=segment)]
 

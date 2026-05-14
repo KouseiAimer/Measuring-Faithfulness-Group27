@@ -1,4 +1,5 @@
 import os, sys, gc, json, copy, random, argparse, subprocess, shutil
+from pathlib import Path
 from pprint import pprint
 
 import torch
@@ -17,9 +18,41 @@ from data import FRCollator, cot_to_otfd, model_name_dict, load_or_generate_data
 from dataload import DATASETS
 from util import set_random_seed
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+
 def memory_stats():
     print(torch.cuda.memory_allocated()/1024**2)
     print(torch.cuda.memory_reserved()/1024**2)
+
+def model_short_name(model_id):
+    mod = model_id.rstrip("/").split("/")[-1]
+    return model_name_dict.get(mod, mod.replace("\\", "-").replace("/", "-"))
+
+def resolve_torch_dtype(dtype_name):
+    if dtype_name == "auto":
+        return "auto"
+    dtype_map = {
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+        "float32": torch.float32,
+    }
+    if dtype_name not in dtype_map:
+        raise ValueError(f"Unsupported torch dtype: {dtype_name}")
+    return dtype_map[dtype_name]
+
+def configure_tokenizer(tokenizer):
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
+    return tokenizer
+
+def load_causal_lm(model_id, torch_dtype):
+    return CLM.from_pretrained(
+        model_id,
+        torch_dtype=torch_dtype,
+        trust_remote_code=True,
+        device_map="auto",
+    )
 
 
 def run_lm_eval(model_path, log_path): 
@@ -164,7 +197,7 @@ def evaluate(model, tokenizer, DH, target, specificity_split, step_idx):
   else:
       unlearned_step_prefix = cot_prefix # First cot step
 
-  step_probability = completion_probabilities(model, tokenizer, unlearned_step_prefix, [unlearned_cot])
+  step_probability = completion_probabilities(model, tokenizer, unlearned_step_prefix, [unlearned_step])
 
   # (1) faithfulness: how does the model perform wrt. unlearning target
   completion_after, probs_after, prediction_after = answer_probabilities(
@@ -202,16 +235,12 @@ def evaluate(model, tokenizer, DH, target, specificity_split, step_idx):
 def unlearn_single(model_id, tokenizer, args, target, step_idx, cots_train, cots_verify, dh, instance_idx):
 
     # Load models and dataset, fresh every time
-    model = CLM.from_pretrained(model_id, 
-                                torch_dtype=torch.bfloat16,
-                                trust_remote_code=True,
-                                device_map="auto"
-                                )
+    torch_dtype = resolve_torch_dtype(args.torch_dtype)
+    model = load_causal_lm(model_id, torch_dtype)
     # Oracle model is frozen
-    oracle_model = CLM.from_pretrained(model_id,
-                                        torch_dtype=torch.bfloat16,
-                                        trust_remote_code=True, 
-                                        device_map="auto")
+    oracle_model = load_causal_lm(model_id, torch_dtype)
+    model.config.pad_token_id = tokenizer.pad_token_id
+    oracle_model.config.pad_token_id = tokenizer.pad_token_id
     device = model.device
     collator = FRCollator(tokenizer, device=device)
 
@@ -275,8 +304,7 @@ def unlearn_single(model_id, tokenizer, args, target, step_idx, cots_train, cots
     # Calls lm_eval_harness on a saved model checkpoint, extracts the performance from stdout
     #  and then deletes the checkpoint.
     if args.mmlu or args.gsm:
-      mod = model_id.split("/")[-1]
-      short_model = model_name_dict[mod]
+      short_model = model_short_name(model_id)
       name = f"{instance_idx}_{step_idx}"
       resdir = f"chkp/{args.dataset}/{short_model}/"
       print(f"Instance and step idx: {name}")
@@ -320,7 +348,7 @@ def load_ids(fin, stepwise=False):
       with open(fin, 'r') as infile:
           for line in infile:
               jsonline = json.loads(line)
-              id = jsonline['question']
+              id = jsonline.get('id', jsonline['question'])
               if stepwise:
                   id = f"{id}_{jsonline['step_idx']}"
               ids.add(id)
@@ -332,13 +360,13 @@ def store(instance_info, fout):
 
 def make_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name', type=str, default='microsoft/Phi-3-mini-4k-instruct', help="Model name (hf) or local path")
-    parser.add_argument('--dataset', type=str, default='sports', 
-                        help="Which dataset to use")
+    parser.add_argument('--model_name', type=str, default='Qwen/Qwen3-8B', help="Model name (hf) or local path")
+    parser.add_argument('--dataset', type=str, default='ceval', 
+                        help="Dataset id: ceval or ceval-<subject>")
     parser.add_argument('--method', type=str, default='npo_KL', 
                         help="Which unlearning method to use")
-    parser.add_argument('--strategy', type=str, default='segmented', 
-                        help="Which unlearning strategy to use: full, segmented")
+    parser.add_argument('--strategy', type=str, default='sentencize', choices=['full', 'sentencize'],
+                        help="Which unlearning strategy to use: full, sentencize")
     parser.add_argument('--stepwise', dest='stepwise', action='store_true', default=True, help="Unlearn one CoT step at a time.")
     parser.add_argument('--no-stepwise', dest='stepwise', action='store_false', help="Unlearn the whole CoT at once.")
     parser.add_argument('--temperature', type=float, default=0.,
@@ -347,20 +375,30 @@ def make_parser():
                         help="Random seed for the experiments")
     parser.add_argument('--epochs', type=int, default=5,
                         help="Number of unlearning epochs")
-    parser.add_argument('--lr', type=float, default=5e-5,
+    parser.add_argument('--lr', type=float, default=1e-5,
                         help="Learning rate for NPO")
+    parser.add_argument('--max_samples', type=int, default=250,
+                        help="Random C-Eval sample size used for CoT generation/loading. Original experiments used 250.")
+    parser.add_argument('--n_unlearn', type=int, default=250,
+                        help="Maximum number of sampled instances to run unlearning on after the held-out split.")
+    parser.add_argument('--verify_samples', type=int, default=20,
+                        help="Number of sampled instances held out for specificity evaluation.")
+    parser.add_argument('--torch_dtype', type=str, default='bfloat16',
+                        choices=['auto', 'bfloat16', 'float16', 'float32'],
+                        help="dtype for loading Qwen models")
     parser.add_argument('--new_cot', action='store_true', help="Force generation of a fresh batch of CoTs.")
     parser.add_argument('--pos', action='store_true', help="Filter out function tokens in unlearning.")
     parser.add_argument('--ff2', action='store_true', help="Optimize only the ff2 layers")
     parser.add_argument('--atomic', action='store_true', help="Use atomic CoT cache/generation instead of final CoT.")
     parser.add_argument('--ablation', action='store_true', help="Run on subsample of instances, change logging dir.")
-    parser.add_argument('--mmlu', type=int, default=0, help="Evaluate MMLU on a subsample of --mmlu model instances post-unlearning")
-    parser.add_argument('--gsm', type=int, default=0, help="Evaluate GSM8K on a subsample of --gsm model instances post-unlearning [WIP]")
+    parser.add_argument('--mmlu', type=int, default=0, help="Legacy English MMLU evaluation switch; leave 0 for C-Eval runs")
+    parser.add_argument('--gsm', type=int, default=0, help="Legacy GSM8K evaluation switch; leave 0 for C-Eval runs")
     
     return parser
 
 def main():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    os.chdir(SCRIPT_DIR)
 
     args = make_parser().parse_args()
 
@@ -373,14 +411,19 @@ def main():
     if hf_token:
         login(token=hf_token)
 
-    model_id = args.model_name 
-    tokenizer = TOK.from_pretrained(model_id)
+    if args.dataset not in DATASETS:
+        available = ", ".join(["ceval", "ceval-computer_network", "ceval-high_school_physics"])
+        raise ValueError(f"Unknown dataset '{args.dataset}'. Examples: {available}")
 
-    # Fix missing pad token if necessary
-    if 'Phi' in model_id:
-        tokenizer.pad_token = tokenizer.unk_token
-    else:
-        tokenizer.pad_token = tokenizer.eos_token
+    if args.dataset.startswith("ceval") and args.pos:
+        print("--pos uses the English spaCy tagger in the original repo; disabling it for C-Eval.")
+        args.pos = False
+
+    if args.max_samples <= 0:
+        args.max_samples = None
+
+    model_id = args.model_name 
+    tokenizer = configure_tokenizer(TOK.from_pretrained(model_id, trust_remote_code=True))
 
     # Data loading (needs tokenizer)
     # Question, CoT, Answer
@@ -393,18 +436,26 @@ def main():
     cot_data = load_or_generate_dataset_cots(model_id=model_id, tokenizer=tokenizer,
                                               dataset_id=args.dataset,force_generate=args.new_cot, 
                                               sentencize=args.strategy == 'sentencize',
-                                              temperature=args.temperature, seed=args.seed, atomic=args.atomic)
+                                              temperature=args.temperature, seed=args.seed, atomic=args.atomic,
+                                              max_instances=args.max_samples)
+
+    if not cot_data:
+        raise ValueError(f"No CoT data found/generated for dataset {args.dataset}")
+    for item in cot_data:
+        if not item.get('segmented_cot'):
+            item['segmented_cot'] = [item['cot']]
 
     # Shuffle data
     random.shuffle(cot_data)
 
     # "Specificity" split = same task, different instances
-    N_verify = 20
+    N_verify = min(args.verify_samples, max(1, len(cot_data) - 1))
     cots_train, cots_verify = cot_data[:-N_verify], cot_data[-N_verify:] #
+    if not cots_train:
+        raise ValueError("Not enough sampled instances after the verification split")
 
     # Results / dataset / model_id
-    mod = model_id.split("/")[-1]
-    short_model = model_name_dict[mod]
+    short_model = model_short_name(model_id)
 
     # Logging
     if args.mmlu:
@@ -415,25 +466,25 @@ def main():
       N_unlearn = args.gsm
     elif args.ablation:
       root_name = "ablation"
-      N_unlearn = 30
+      N_unlearn = min(30, args.n_unlearn)
     else:
       root_name = "final_results"
-      N_unlearn = 250
+      N_unlearn = args.n_unlearn
     
     resdir = f"{root_name}/{args.dataset}/{short_model}/"
     os.makedirs(resdir, exist_ok=True)
     # No POS, no ff2, unlearn full
-    logfile_name = f"{args.method}_{args.strategy}_s={args.stepwise}_lr={str(args.lr)}_rs={args.seed}_pos={args.pos}_ff2={args.ff2}.out"
+    logfile_name = f"{args.method}_{args.strategy}_s={args.stepwise}_lr={str(args.lr)}_rs={args.seed}_n={args.max_samples}_pos={args.pos}_ff2={args.ff2}.out"
     
     # Restore previous results 
     ids = load_ids(resdir + logfile_name, stepwise=args.stepwise)
     print(f"Ids so far: {len(ids)}")
 
-    for idx, target in enumerate(cots_train[:N_unlearn]):
+    for idx, target in enumerate(cots_train[:min(N_unlearn, len(cots_train))]):
         # Clunky for now
         n_steps = 1
         if args.stepwise:
-          n_steps = len(target['segmented_cot'])
+          n_steps = len(target.get('segmented_cot') or [target['cot']])
 
         for step_idx in range(n_steps):
           
@@ -448,6 +499,7 @@ def main():
               'step_idx': step_idx,
               'options': target['options'],
               'correct': target['correct_letter'],
+              'subject': target.get('subject'),
               'initial_cot': target['cot'],
               'initial_cot_probs': target['cot_probs'],
               'initial_probs': target['nocot_probs'],

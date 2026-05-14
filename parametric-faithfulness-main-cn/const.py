@@ -1,5 +1,8 @@
-datasets = ['arc-challenge', 'openbook', 'sports', 'sqa'] 
+datasets = ['ceval']
 model_name_dict = {
+    'Qwen3-8B': 'Qwen3-8B',
+    'Qwen3-3B': 'Qwen3-3B',
+    'Qwen3-1.7B': 'Qwen3-1.7B',
     'Phi-3-mini-4k-instruct': 'Phi-3',
     'Meta-Llama-3-8B-Instruct': 'LLaMA-3',
     'Meta-Llama-3-3B-Instruct': 'LLaMA-3-3B',
@@ -8,6 +11,9 @@ model_name_dict = {
 }
 
 model_name_to_path = {
+    'Qwen3-8B': 'Qwen/Qwen3-8B',
+    'Qwen3-3B': 'Qwen/Qwen3-3B',
+    'Qwen3-1.7B': 'Qwen/Qwen3-1.7B',
     'Phi-3': 'microsoft/Phi-3-mini-4k-instruct',
     'LLaMA-3': 'meta-llama/Meta-Llama-3-8B-Instruct',
     'LLaMA-3-3B':'meta-llama/Llama-3.2-3B-Instruct',
@@ -20,6 +26,12 @@ models = list(set(model_name_dict.values()))
 
 
 dataset_model_best_lr = {
+    'ceval':{
+        'Qwen3-8B': 1e-05,
+        'Qwen3-3B': 1e-05,
+        'Qwen3-1.7B': 3e-05,
+    },
+
     'arc-challenge':{
         'Phi-3': 1e-04,
         'LLaMA-3': 1e-05,
@@ -47,4 +59,3 @@ dataset_model_best_lr = {
         'Mistral-2': 5e-06,
     },
 }
-
