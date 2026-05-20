@@ -17,8 +17,27 @@ BOWMAN_ASSISTANT_ANSWER_PREFIX = "Assistant: The single, most likely answer is (
 
 ANSWER_LETTERS = ["A", "B", "C", "D", "E"] # No MCQA dataset considered has more than 5
 
+def call_prompt_builder(builder, *args, tokenizer=None):
+    try:
+        return builder(*args, tokenizer=tokenizer)
+    except TypeError:
+        return builder(*args)
+
 def decode_new_tokens(tokenizer, token_ids):
     return tokenizer.decode(token_ids, skip_special_tokens=True)
+
+def strip_thinking_markup(text):
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = text.replace("<think>", "").replace("</think>", "")
+    text = text.replace("<|im_end|>", "").replace("<|endoftext|>", "")
+    return text.strip()
+
+def generation_eos_token_ids(tokenizer):
+    eos_ids = []
+    for token in [tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|im_end|>")]:
+        if isinstance(token, int) and token >= 0 and token not in eos_ids:
+            eos_ids.append(token)
+    return eos_ids or None
 
 def answer_letter_token_ids(tokenizer, answer_letters):
     ids = []
@@ -28,6 +47,14 @@ def answer_letter_token_ids(tokenizer, answer_letters):
             raise ValueError(f"Could not encode answer letter {letter!r}")
         ids.append(encoded[0])
     return ids
+
+def normalized_letter_probs(score_row, answer_indices):
+    letter_probs = score_row[answer_indices]
+    total = letter_probs.sum()
+    if total > 0:
+        letter_probs = letter_probs / total
+    predicted_letter_index = torch.argmax(letter_probs).item()
+    return letter_probs.detach().cpu().float().numpy(), predicted_letter_index
 
 def segment_generated_cot(cot_text):
     cot_text = cot_text.strip()
@@ -61,24 +88,23 @@ def answer_probabilities(model, tokenizer, dh, instance):
         answer_letters = ANSWER_LETTERS[:n_options]
         answer_indices = answer_letter_token_ids(tokenizer, answer_letters)
 
-        prompt = dh.make_bowman_demonstration(instance)
+        prompt = call_prompt_builder(dh.make_bowman_demonstration, instance, tokenizer=tokenizer)
         answer_inputs = tokenizer.encode(prompt, padding=False, add_special_tokens=False, return_tensors='pt').to(device)
         
         answer_output = model.generate(input_ids=answer_inputs, max_new_tokens=10,
                                         output_scores=True,
                                         temperature=0., do_sample=False,return_dict_in_generate=True,
-                                    pad_token_id=tokenizer.pad_token_id)
+                                    pad_token_id=tokenizer.pad_token_id,
+                                    eos_token_id=generation_eos_token_ids(tokenizer))
     
         # 2.1 obtain letter completion probabilities
         first_token_probs = torch.softmax(answer_output['scores'][0][0], dim=-1)
-        letter_probs = first_token_probs[answer_indices]
-        predicted_letter_index = torch.argmax(letter_probs).item()
-        letter_probs = letter_probs.detach().cpu().float().numpy()
+        letter_probs, predicted_letter_index = normalized_letter_probs(first_token_probs, answer_indices)
     
         # 2.2 take only newly generated output
         answer_output = answer_output[0][0]
         answer_new_output = answer_output[answer_inputs.shape[-1]:]
-        answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
+        answer_new_output_text = strip_thinking_markup(decode_new_tokens(tokenizer, answer_new_output))
         
         return answer_new_output_text, letter_probs, predicted_letter_index
 
@@ -92,12 +118,13 @@ def complete(model, tokenizer, prompt, max_new_tokens=300, temperature=0., do_sa
     outputs = model.generate(input_ids=inputs, max_new_tokens=max_new_tokens,
                                     output_scores=True,
                                     temperature=temperature, do_sample=do_sample,return_dict_in_generate=True,
-                                    pad_token_id=tokenizer.pad_token_id)
+                                    pad_token_id=tokenizer.pad_token_id,
+                                    eos_token_id=generation_eos_token_ids(tokenizer))
 
     # 2 take only newly generated output
     output = outputs[0][0]
     new_output = output[inputs.shape[-1]:]
-    new_output_text = decode_new_tokens(tokenizer, new_output)
+    new_output_text = strip_thinking_markup(decode_new_tokens(tokenizer, new_output))
     if split_newline:
       new_output_text = new_output_text.strip().split("\n\n")[0] 
     
@@ -114,22 +141,21 @@ def letter_completion(model, tokenizer, prompt, N):
     answer_inputs = tokenizer.encode(prompt, padding=False, add_special_tokens=False, return_tensors='pt').to(device)
     answer_output = model.generate(input_ids = answer_inputs, max_new_tokens=20,
                                     output_scores=True, return_dict_in_generate=True,
-                                      pad_token_id=tokenizer.pad_token_id) # , num_return_sequences=10
+                                      pad_token_id=tokenizer.pad_token_id,
+                                      eos_token_id=generation_eos_token_ids(tokenizer)) # , num_return_sequences=10
 
     # 2.1 obtain letter completion probabilities
     first_token_probs = torch.softmax(answer_output['scores'][0][0], dim=-1)
-    letter_probs = first_token_probs[answer_indices]
-    predicted_letter_index = torch.argmax(letter_probs).item()
-    letter_probs = letter_probs.detach().cpu().float().numpy()
+    letter_probs, predicted_letter_index = normalized_letter_probs(first_token_probs, answer_indices)
 
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
+    answer_new_output_text = strip_thinking_markup(decode_new_tokens(tokenizer, answer_new_output))
     
     return letter_probs, predicted_letter_index
 
-def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentencize=True, max_instances=250, seed=1001):
+def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentencize=True, max_instances=250, seed=1001, max_new_tokens=300):
     print(f"Generating new CoTs for {model_id}, {dataset_id}, sentencize={sentencize}")
     model, _ = load_model_and_tokenizer(model_id)
     DH = DATASETS[dataset_id]
@@ -148,8 +174,8 @@ def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentenci
         _, nocot_probs, _ = answer_probabilities(
             model, tokenizer, DH, instance)
 
-        cot_prompt = DH.make_cot_prompt(instance)
-        cot = complete(model, tokenizer, cot_prompt, temperature=temperature)
+        cot_prompt = call_prompt_builder(DH.make_cot_prompt, instance, tokenizer=tokenizer)
+        cot = complete(model, tokenizer, cot_prompt, temperature=temperature, max_new_tokens=max_new_tokens)
 
         cot_probs, _  = generation_fixed_cot(model, tokenizer, DH, instance, cot)
         segmented_cot = None
@@ -159,7 +185,7 @@ def generate_dataset_cots(model_id, tokenizer, dataset_id, temperature, sentenci
             'id': instance[DH.id_key],
             'question': DH.get_question(instance),
             'correct_letter': DH.correct_answer_letter(instance),
-            'cot_prompt': DH.make_cot_prompt(instance),
+            'cot_prompt': cot_prompt,
             'cot': cot,
             'options': DH.get_answer_choices(instance),
             'nocot_probs': nocot_probs.tolist(),
@@ -183,27 +209,26 @@ def generation_fixed_cot(model, tokenizer, dh, instance, cot_text):
     n_options = len(dh.get_answer_letters(instance))
     answer_letters = ANSWER_LETTERS[:n_options]
     answer_indices = answer_letter_token_ids(tokenizer, answer_letters)
-    cot_prompt = dh.make_cot_prompt(instance)
+    cot_prompt = call_prompt_builder(dh.make_cot_prompt, instance, tokenizer=tokenizer)
 
     cot_text = cot_text.strip().split("\n\n")[0] # Only up to double newline
 
     # Step 5: make answer prompt
-    answer_prompt = dh.make_answer_prompt(cot_prompt + cot_text)
+    answer_prompt = call_prompt_builder(dh.make_answer_prompt, cot_prompt + cot_text, tokenizer=tokenizer)
     answer_inputs = tokenizer.encode(answer_prompt, padding=False, add_special_tokens=False, return_tensors='pt').to(device)
     answer_output = model.generate(input_ids = answer_inputs, max_new_tokens=20,
                                     output_scores=True, return_dict_in_generate=True,
-                                      pad_token_id=tokenizer.pad_token_id)
+                                      pad_token_id=tokenizer.pad_token_id,
+                                      eos_token_id=generation_eos_token_ids(tokenizer))
 
     # 2.1 obtain letter completion probabilities
     first_token_probs = torch.softmax(answer_output['scores'][0][0], dim=-1)
-    letter_probs = first_token_probs[answer_indices]
-    predicted_letter_index = torch.argmax(letter_probs).item()
-    letter_probs = letter_probs.detach().cpu().float().numpy()
+    letter_probs, predicted_letter_index = normalized_letter_probs(first_token_probs, answer_indices)
 
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
+    answer_new_output_text = strip_thinking_markup(decode_new_tokens(tokenizer, answer_new_output))
     
     return letter_probs, predicted_letter_index
 
@@ -223,18 +248,17 @@ def generate(model, tokenizer, instance):
     answer_output = model.generate(input_ids=answer_inputs, max_new_tokens=10,
                                     output_scores=True,
                                     temperature=0., do_sample=False,return_dict_in_generate=True,
-                                    pad_token_id=tokenizer.pad_token_id) # , num_return_sequences=10
+                                    pad_token_id=tokenizer.pad_token_id,
+                                    eos_token_id=generation_eos_token_ids(tokenizer)) # , num_return_sequences=10
 
     # 2.1 obtain letter completion probabilities
     first_token_probs = torch.softmax(answer_output['scores'][0][0], dim=-1)
-    letter_probs = first_token_probs[answer_indices]
-    predicted_letter_index = torch.argmax(letter_probs).item()
-    letter_probs = letter_probs.detach().cpu().float().numpy()
+    letter_probs, predicted_letter_index = normalized_letter_probs(first_token_probs, answer_indices)
 
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
+    answer_new_output_text = strip_thinking_markup(decode_new_tokens(tokenizer, answer_new_output))
     
     return answer_new_output_text, letter_probs, predicted_letter_index
 
@@ -259,12 +283,13 @@ def generate_cot(model, tokenizer, instance, max_new_tokens=300, temperature=0.,
     cot_output = model.generate(input_ids=answer_inputs, max_new_tokens=max_new_tokens,
                                     output_scores=True,
                                     temperature=temperature, do_sample=do_sample,return_dict_in_generate=True,
-                                    pad_token_id=tokenizer.pad_token_id) # , num_return_sequences=10
+                                    pad_token_id=tokenizer.pad_token_id,
+                                    eos_token_id=generation_eos_token_ids(tokenizer)) # , num_return_sequences=10
 
     # 2 take only newly generated output
     cot_output = cot_output[0][0]
     cot_new_output = cot_output[answer_inputs.shape[-1]:]
-    cot_new_output_text = decode_new_tokens(tokenizer, cot_new_output)
+    cot_new_output_text = strip_thinking_markup(decode_new_tokens(tokenizer, cot_new_output))
     cot_new_output_text = cot_new_output_text.strip().split("\n\n")[0] 
     
     return cot_new_output_text, answer_prompt
@@ -290,18 +315,17 @@ def cot_generate(model, tokenizer, instance, max_new_tokens=300, temperature=0.,
                                     max_new_tokens=10,
                                     output_scores=True,
                                     temperature=temperature, do_sample=do_sample,return_dict_in_generate=True,
-                                    pad_token_id=tokenizer.pad_token_id) # , num_return_sequences=10
+                                    pad_token_id=tokenizer.pad_token_id,
+                                    eos_token_id=generation_eos_token_ids(tokenizer)) # , num_return_sequences=10
 
     # 2.1 obtain letter completion probabilities
     first_token_probs = torch.softmax(answer_output['scores'][0][0], dim=-1)
-    letter_probs = first_token_probs[answer_indices]
-    predicted_letter_index = torch.argmax(letter_probs).item()
-    letter_probs = letter_probs.detach().cpu().float().numpy()
+    letter_probs, predicted_letter_index = normalized_letter_probs(first_token_probs, answer_indices)
 
     # 2.2 take only newly generated output
     answer_output = answer_output[0][0]
     answer_new_output = answer_output[answer_inputs.shape[-1]:]
-    answer_new_output_text = decode_new_tokens(tokenizer, answer_new_output)
+    answer_new_output_text = strip_thinking_markup(decode_new_tokens(tokenizer, answer_new_output))
     
     return answer_new_output_text, letter_probs, predicted_letter_index,cot_text, cot_prompt
 
@@ -343,6 +367,8 @@ def completion_probabilities(model, tokenizer, prefix, targets):
     target_probs = target_probs.squeeze(1)
     seq_probs = torch.sum(target_probs, dim=1)  # prod if not in logspace
     length_penalty = model.generation_config.length_penalty
-    seq_probs /= lengths**length_penalty # if not logspace seq_probs /= lengths
+    if length_penalty is None:
+        length_penalty = 1.0
+    seq_probs /= lengths.to(seq_probs.dtype).clamp_min(1) ** length_penalty # if not logspace seq_probs /= lengths
 
     return seq_probs

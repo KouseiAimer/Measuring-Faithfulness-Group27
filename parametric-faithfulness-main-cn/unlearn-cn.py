@@ -13,7 +13,14 @@ from transformers import AutoModelForCausalLM as CLM
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 
-from evaluate import completion_probabilities, answer_probabilities, complete, generation_fixed_cot
+from evaluate import (
+    call_prompt_builder,
+    completion_probabilities,
+    answer_probabilities,
+    complete,
+    generation_fixed_cot,
+    strip_thinking_markup,
+)
 from data import FRCollator, cot_to_otfd, model_name_dict, load_or_generate_dataset_cots
 from dataload import DATASETS
 from util import set_random_seed
@@ -46,13 +53,25 @@ def configure_tokenizer(tokenizer):
     tokenizer.padding_side = "left"
     return tokenizer
 
-def load_causal_lm(model_id, torch_dtype):
-    return CLM.from_pretrained(
-        model_id,
-        torch_dtype=torch_dtype,
-        trust_remote_code=True,
-        device_map="auto",
-    )
+def load_causal_lm(model_id, torch_dtype, device_map="auto", offload_folder=None):
+    kwargs = {
+        "torch_dtype": torch_dtype,
+        "trust_remote_code": True,
+        "low_cpu_mem_usage": True,
+    }
+    if device_map == "cpu":
+        kwargs["device_map"] = {"": "cpu"}
+    else:
+        kwargs["device_map"] = device_map
+    if offload_folder:
+        kwargs["offload_folder"] = offload_folder
+    return CLM.from_pretrained(model_id, **kwargs)
+
+def first_param_device(model):
+    return next(model.parameters()).device
+
+def inputs_to_device(inputs, device):
+    return tuple(x.to(device) for x in inputs)
 
 
 def run_lm_eval(model_path, log_path): 
@@ -106,8 +125,9 @@ def compute_loss(model, oracle_model, inputs, loss_type='npo_grad_diff', ref_pol
 
             if ref_policy == 'fine_tuned':
                 with torch.no_grad():
-                    forget_outputs_oracle = oracle_model(input_ids,labels=labels, attention_mask=attention_mask)
-                    forget_logits_oracle = forget_outputs_oracle.logits
+                    oracle_inputs = inputs_to_device(forget_inputs, first_param_device(oracle_model))
+                    forget_outputs_oracle = oracle_model(oracle_inputs[0],labels=oracle_inputs[1], attention_mask=oracle_inputs[2])
+                    forget_logits_oracle = forget_outputs_oracle.logits.to(input_ids.device)
                     forget_loss_oracle = get_batch_loss(forget_logits_oracle, labels)
                 neg_log_ratios = forget_loss_current - forget_loss_oracle
             else:
@@ -123,8 +143,9 @@ def compute_loss(model, oracle_model, inputs, loss_type='npo_grad_diff', ref_pol
 
             if ref_policy == 'fine_tuned':
                 with torch.no_grad():
-                    forget_outputs_oracle = oracle_model(input_ids,labels=labels, attention_mask=attention_mask)
-                    forget_logits_oracle = forget_outputs_oracle.logits
+                    oracle_inputs = inputs_to_device(forget_inputs, first_param_device(oracle_model))
+                    forget_outputs_oracle = oracle_model(oracle_inputs[0],labels=oracle_inputs[1], attention_mask=oracle_inputs[2])
+                    forget_logits_oracle = forget_outputs_oracle.logits.to(input_ids.device)
 
                     forget_loss_oracle = get_batch_loss(forget_logits_oracle, labels)
                 neg_log_ratios = forget_loss_current - forget_loss_oracle
@@ -146,8 +167,9 @@ def compute_loss(model, oracle_model, inputs, loss_type='npo_grad_diff', ref_pol
             
             if ref_policy == 'fine_tuned':
                 with torch.no_grad():
-                    forget_outputs_oracle = oracle_model(input_ids,labels=labels, attention_mask=attention_mask)
-                    forget_logits_oracle = forget_outputs_oracle.logits
+                    oracle_inputs = inputs_to_device(forget_inputs, first_param_device(oracle_model))
+                    forget_outputs_oracle = oracle_model(oracle_inputs[0],labels=oracle_inputs[1], attention_mask=oracle_inputs[2])
+                    forget_logits_oracle = forget_outputs_oracle.logits.to(input_ids.device)
                     forget_loss_oracle = get_batch_loss(forget_logits_oracle, labels)
                 neg_log_ratios = forget_loss_current - forget_loss_oracle
             else:
@@ -156,9 +178,11 @@ def compute_loss(model, oracle_model, inputs, loss_type='npo_grad_diff', ref_pol
 
             retain_input_ids, retain_labels, retain_attention_mask = retain_inputs
             with torch.no_grad():
-                retain_outputs = oracle_model(retain_input_ids,labels=retain_labels, attention_mask=retain_attention_mask)
-            retain_probs = F.log_softmax(retain_outputs.logits, dim=-1)
-            retain_probs = retain_probs.view(-1, retain_outputs.logits.shape[-1])
+                oracle_retain_inputs = inputs_to_device(retain_inputs, first_param_device(oracle_model))
+                retain_outputs = oracle_model(oracle_retain_inputs[0],labels=oracle_retain_inputs[1], attention_mask=oracle_retain_inputs[2])
+            retain_logits = retain_outputs.logits.to(retain_input_ids.device)
+            retain_probs = F.log_softmax(retain_logits, dim=-1)
+            retain_probs = retain_probs.view(-1, retain_logits.shape[-1])
 
             current_outputs = model(retain_input_ids,labels=retain_labels, attention_mask=retain_attention_mask)
             current_probs = F.log_softmax(current_outputs.logits, dim=-1)
@@ -180,12 +204,12 @@ def compute_specificity(model, tokenizer, DH, specificity_split):
   
   return specificity, specificity_probs
 
-def evaluate(model, tokenizer, DH, target, specificity_split, step_idx):
+def evaluate(model, tokenizer, DH, target, specificity_split, step_idx, max_new_tokens=300):
   model.eval()
   # (0) efficacy: how does the probability of the initial CoT change after unlearning
   # model, tokenizer, prefix, target
   unlearned_cot = target['cot']
-  cot_prefix = DH.make_cot_prompt(target['raw_instance'])
+  cot_prefix = call_prompt_builder(DH.make_cot_prompt, target['raw_instance'], tokenizer=tokenizer)
   cot_probability = completion_probabilities(model, tokenizer, cot_prefix, [unlearned_cot])
 
   # (0.1) how does the probability of the _unlearned step_ change after unlearning
@@ -207,7 +231,7 @@ def evaluate(model, tokenizer, DH, target, specificity_split, step_idx):
   specificity_predictions, specificity_probabilities = compute_specificity(model, tokenizer, DH, specificity_split)
 
   # (3) new CoT: check how the model generated CoT looks like after unlearning
-  new_cot = complete(model, tokenizer, DH.make_cot_prompt(target['raw_instance']))
+  new_cot = complete(model, tokenizer, cot_prefix, max_new_tokens=max_new_tokens)
 
   # (4) probability under new CoT (agreement before/after unlearning)
   new_cot_probs, _  = generation_fixed_cot(model, tokenizer, DH, target['raw_instance'], new_cot)
@@ -236,11 +260,17 @@ def unlearn_single(model_id, tokenizer, args, target, step_idx, cots_train, cots
 
     # Load models and dataset, fresh every time
     torch_dtype = resolve_torch_dtype(args.torch_dtype)
-    model = load_causal_lm(model_id, torch_dtype)
+    model = load_causal_lm(model_id, torch_dtype, device_map=args.model_device, offload_folder=args.offload_folder)
     # Oracle model is frozen
-    oracle_model = load_causal_lm(model_id, torch_dtype)
+    oracle_model = load_causal_lm(model_id, torch_dtype, device_map=args.oracle_device, offload_folder=args.offload_folder)
     model.config.pad_token_id = tokenizer.pad_token_id
     oracle_model.config.pad_token_id = tokenizer.pad_token_id
+    oracle_model.eval()
+    for param in oracle_model.parameters():
+        param.requires_grad = False
+    if args.gradient_checkpointing:
+        model.config.use_cache = False
+        model.gradient_checkpointing_enable()
     device = model.device
     collator = FRCollator(tokenizer, device=device)
 
@@ -276,12 +306,15 @@ def unlearn_single(model_id, tokenizer, args, target, step_idx, cots_train, cots
           else:
             param.requires_grad = False
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    trainable_params = [param for param in model.parameters() if param.requires_grad]
+    if not trainable_params:
+        raise ValueError("No trainable parameters selected. Check --ff2 and model parameter names.")
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.lr)
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=max_steps) # warmup_steps
 
     results_per_epoch = {}
     # Results before training, for comparison
-    results_per_epoch[0] = evaluate(model, tokenizer, dh, target, cots_verify, step_idx=step_idx)
+    results_per_epoch[0] = evaluate(model, tokenizer, dh, target, cots_verify, step_idx=step_idx, max_new_tokens=args.eval_max_new_tokens)
     
     for epoch in range(EPOCHS):
       model.train()
@@ -296,7 +329,7 @@ def unlearn_single(model_id, tokenizer, args, target, step_idx, cots_train, cots
         optimizer.zero_grad()
 
       # Eval step
-      epoch_result = evaluate(model, tokenizer, dh, target, cots_verify,step_idx=step_idx)
+      epoch_result = evaluate(model, tokenizer, dh, target, cots_verify,step_idx=step_idx, max_new_tokens=args.eval_max_new_tokens)
       results_per_epoch[(epoch+1)] = epoch_result
 
 
@@ -347,7 +380,11 @@ def load_ids(fin, stepwise=False):
     if os.path.exists(fin):
       with open(fin, 'r') as infile:
           for line in infile:
-              jsonline = json.loads(line)
+              try:
+                  jsonline = json.loads(line)
+              except json.JSONDecodeError:
+                  print(f"Skipping malformed result line in {fin}")
+                  continue
               id = jsonline.get('id', jsonline['question'])
               if stepwise:
                   id = f"{id}_{jsonline['step_idx']}"
@@ -356,7 +393,7 @@ def load_ids(fin, stepwise=False):
 
 def store(instance_info, fout):
     with open(fout, 'a') as outfile:
-      outfile.write(json.dumps(instance_info)+"\n")
+      outfile.write(json.dumps(instance_info, ensure_ascii=False)+"\n")
 
 def make_parser():
     parser = argparse.ArgumentParser()
@@ -379,13 +416,33 @@ def make_parser():
                         help="Learning rate for NPO")
     parser.add_argument('--max_samples', type=int, default=250,
                         help="Random C-Eval sample size used for CoT generation/loading. Original experiments used 250.")
+    parser.add_argument('--cot_max_new_tokens', type=int, default=300,
+                        help="Maximum new tokens when generating the initial visible CoT cache.")
+    parser.add_argument('--eval_max_new_tokens', type=int, default=300,
+                        help="Maximum new tokens when regenerating CoT during post-unlearning evaluation.")
     parser.add_argument('--n_unlearn', type=int, default=250,
                         help="Maximum number of sampled instances to run unlearning on after the held-out split.")
     parser.add_argument('--verify_samples', type=int, default=20,
                         help="Number of sampled instances held out for specificity evaluation.")
+    parser.add_argument('--num_shards', type=int, default=1,
+                        help="Split unlearning targets into this many independent shards for parallel runs.")
+    parser.add_argument('--shard_idx', type=int, default=0,
+                        help="Shard index to run, in [0, num_shards). Each shard writes a separate result file.")
     parser.add_argument('--torch_dtype', type=str, default='bfloat16',
                         choices=['auto', 'bfloat16', 'float16', 'float32'],
                         help="dtype for loading Qwen models")
+    parser.add_argument('--model_device', type=str, default='auto',
+                        help="Device map for the trainable model: auto or cpu.")
+    parser.add_argument('--oracle_device', type=str, default='auto',
+                        help="Device map for the frozen oracle model. Use cpu for 10GB smoke tests.")
+    parser.add_argument('--offload_folder', type=str, default='offload',
+                        help="Folder used by accelerate if device-map offloading is needed.")
+    parser.add_argument('--gradient_checkpointing', dest='gradient_checkpointing', action='store_true', default=True,
+                        help="Enable gradient checkpointing for lower VRAM use.")
+    parser.add_argument('--no-gradient_checkpointing', dest='gradient_checkpointing', action='store_false',
+                        help="Disable gradient checkpointing.")
+    parser.add_argument('--allow_bad_cot_cache', action='store_true',
+                        help="Do not auto-regenerate caches whose CoTs are empty or only thinking tags.")
     parser.add_argument('--new_cot', action='store_true', help="Force generation of a fresh batch of CoTs.")
     parser.add_argument('--pos', action='store_true', help="Filter out function tokens in unlearning.")
     parser.add_argument('--ff2', action='store_true', help="Optimize only the ff2 layers")
@@ -421,6 +478,10 @@ def main():
 
     if args.max_samples <= 0:
         args.max_samples = None
+    if args.num_shards < 1:
+        raise ValueError("--num_shards must be >= 1")
+    if args.shard_idx < 0 or args.shard_idx >= args.num_shards:
+        raise ValueError("--shard_idx must satisfy 0 <= shard_idx < num_shards")
 
     model_id = args.model_name 
     tokenizer = configure_tokenizer(TOK.from_pretrained(model_id, trust_remote_code=True))
@@ -437,20 +498,69 @@ def main():
                                               dataset_id=args.dataset,force_generate=args.new_cot, 
                                               sentencize=args.strategy == 'sentencize',
                                               temperature=args.temperature, seed=args.seed, atomic=args.atomic,
-                                              max_instances=args.max_samples)
+                                              max_instances=args.max_samples,
+                                              max_new_tokens=args.cot_max_new_tokens)
+
+    def sanitize_cot_items(items):
+        def renormalize(values):
+            arr = np.array(values, dtype=float)
+            total = arr.sum()
+            return (arr / total).tolist() if total > 0 else arr.tolist()
+
+        def clean_segments(segments):
+            cleaned = []
+            for raw_step in segments:
+                step = strip_thinking_markup(raw_step).strip()
+                if not step:
+                    continue
+                # Chinese sentence splitters can leave closing quotes as standalone steps.
+                if cleaned and all(ch in '”’」』）》】）)]}。！？!?；;，,、：:' for ch in step):
+                    cleaned[-1] = f"{cleaned[-1]}{step}"
+                    continue
+                cleaned.append(step)
+            return cleaned
+
+        for item in items:
+            item['cot'] = strip_thinking_markup(item.get('cot', ''))
+            segmented = clean_segments(item.get('segmented_cot') or [])
+            item['segmented_cot'] = segmented or ([item['cot']] if item['cot'] else [])
+            for prob_key in ('nocot_probs', 'cot_probs'):
+                if prob_key in item:
+                    item[prob_key] = renormalize(item[prob_key])
+        return items
 
     if not cot_data:
         raise ValueError(f"No CoT data found/generated for dataset {args.dataset}")
-    for item in cot_data:
-        if not item.get('segmented_cot'):
-            item['segmented_cot'] = [item['cot']]
+    cot_data = sanitize_cot_items(cot_data)
+    unusable_cots = [item for item in cot_data if len(item.get('cot', '')) < 4]
+    if unusable_cots and not args.allow_bad_cot_cache:
+        print(f"Found {len(unusable_cots)}/{len(cot_data)} unusable CoTs in cache; regenerating with non-thinking Qwen template.")
+        cot_data = load_or_generate_dataset_cots(model_id=model_id, tokenizer=tokenizer,
+                                                  dataset_id=args.dataset,force_generate=True,
+                                                  sentencize=args.strategy == 'sentencize',
+                                                  temperature=args.temperature, seed=args.seed, atomic=args.atomic,
+                                                  max_instances=args.max_samples,
+                                                  max_new_tokens=args.cot_max_new_tokens)
+        cot_data = sanitize_cot_items(cot_data)
+
+    if not args.allow_bad_cot_cache:
+        before_filter = len(cot_data)
+        cot_data = [item for item in cot_data if len(item.get('cot', '')) >= 4 and item.get('segmented_cot')]
+        dropped = before_filter - len(cot_data)
+        if dropped:
+            print(f"Dropped {dropped} unusable CoTs after regeneration/cache loading.")
+    if not cot_data:
+        raise ValueError(f"No usable visible CoT data found/generated for dataset {args.dataset}")
 
     # Shuffle data
     random.shuffle(cot_data)
 
     # "Specificity" split = same task, different instances
-    N_verify = min(args.verify_samples, max(1, len(cot_data) - 1))
-    cots_train, cots_verify = cot_data[:-N_verify], cot_data[-N_verify:] #
+    N_verify = min(max(0, args.verify_samples), max(0, len(cot_data) - 1))
+    if N_verify:
+        cots_train, cots_verify = cot_data[:-N_verify], cot_data[-N_verify:] #
+    else:
+        cots_train, cots_verify = cot_data, []
     if not cots_train:
         raise ValueError("Not enough sampled instances after the verification split")
 
@@ -474,13 +584,23 @@ def main():
     resdir = f"{root_name}/{args.dataset}/{short_model}/"
     os.makedirs(resdir, exist_ok=True)
     # No POS, no ff2, unlearn full
-    logfile_name = f"{args.method}_{args.strategy}_s={args.stepwise}_lr={str(args.lr)}_rs={args.seed}_n={args.max_samples}_pos={args.pos}_ff2={args.ff2}.out"
+    shard_suffix = f"_shard={args.shard_idx}-of-{args.num_shards}" if args.num_shards > 1 else ""
+    logfile_name = f"{args.method}_{args.strategy}_s={args.stepwise}_lr={str(args.lr)}_rs={args.seed}_n={args.max_samples}_pos={args.pos}_ff2={args.ff2}{shard_suffix}.out"
     
     # Restore previous results 
     ids = load_ids(resdir + logfile_name, stepwise=args.stepwise)
     print(f"Ids so far: {len(ids)}")
 
-    for idx, target in enumerate(cots_train[:min(N_unlearn, len(cots_train))]):
+    target_items = list(enumerate(cots_train[:min(N_unlearn, len(cots_train))]))
+    if args.num_shards > 1:
+        target_items = [
+            (idx, target)
+            for idx, target in target_items
+            if idx % args.num_shards == args.shard_idx
+        ]
+        print(f"Shard {args.shard_idx}/{args.num_shards}: {len(target_items)} target instances")
+
+    for idx, target in target_items:
         # Clunky for now
         n_steps = 1
         if args.stepwise:
@@ -523,10 +643,11 @@ def main():
           # Log the results
           instance_info['unlearning_results'] = results
           if args.mmlu:
-            instance_info['mmlu_results'] = return_dict['mmlu_results']
+              instance_info['mmlu_results'] = return_dict['mmlu_results']
           if args.gsm:
-            instance_info['gsm8k_results'] = return_dict['gsm8k_results']
+              instance_info['gsm8k_results'] = return_dict['gsm8k_results']
           store(instance_info, resdir+logfile_name)
+          ids.add(check_id)
           del instance_info
 
 if __name__ == '__main__':

@@ -49,7 +49,7 @@ def sample_cots(cot_data, max_instances, seed):
     indices = sorted(indices[:max_instances])
     return [cot_data[idx] for idx in indices]
 
-def load_or_generate_dataset_cots(model_id, tokenizer, dataset_id, seed, temperature, force_generate=False, sentencize=True, atomic=False, max_instances=250):
+def load_or_generate_dataset_cots(model_id, tokenizer, dataset_id, seed, temperature, force_generate=False, sentencize=True, atomic=False, max_instances=250, max_new_tokens=300):
     root = 'final_cot' if not atomic else 'atomic_cot'
     temp = f"{temperature:.{2}}"
     short_model_id = model_id.split("/")[-1]
@@ -64,6 +64,7 @@ def load_or_generate_dataset_cots(model_id, tokenizer, dataset_id, seed, tempera
             sentencize=sentencize,
             max_instances=max_instances,
             seed=seed,
+            max_new_tokens=max_new_tokens,
         )
         cache_cots(dataset_cots, root, short_model_id, dataset_id, seed, f"{temp}{sample_suffix}")
         # Store dependent on seed/temperature

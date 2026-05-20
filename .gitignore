@@ -29,6 +29,37 @@
 /parametric-faithfulness-main-cn/gen_cap/
 /parametric-faithfulness-main-cn/mmlu_results/
 /parametric-faithfulness-main-cn/gsm8k_results/
+/parametric-faithfulness-main-cn/Qwen3-*/
+/parametric-faithfulness-main-cn/logs/
+
+# Enhanced experiment local artifacts
+/parametric-faithfulness-enhanced/.hf_cache/
+/parametric-faithfulness-enhanced/.hf_datasets_cache/
+/parametric-faithfulness-enhanced/local_models/
+/parametric-faithfulness-enhanced/logs/
+/parametric-faithfulness-enhanced/enhanced_runs/
+/parametric-faithfulness-enhanced/final_results/
+/parametric-faithfulness-enhanced/final_cot/
+/parametric-faithfulness-enhanced/atomic_cot/
+/parametric-faithfulness-enhanced/chkp/
+/parametric-faithfulness-enhanced/gen_cap/
+/parametric-faithfulness-enhanced/results/
+/parametric-faithfulness-enhanced/ablation/
+/parametric-faithfulness-enhanced/ablations/
+/parametric-faithfulness-enhanced/minimal_mistake_results/
+/parametric-faithfulness-enhanced/LM_judge_cot/
+/parametric-faithfulness-enhanced/smoke_*.json
+/parametric-faithfulness-enhanced/result_enhanced/*.csv
+/parametric-faithfulness-enhanced/result_enhanced/*.json
+/parametric-faithfulness-enhanced/result_enhanced/*.jsonl
+/parametric-faithfulness-enhanced/result_enhanced/*.out
+/parametric-faithfulness-enhanced/result_enhanced/*.pdf
+/parametric-faithfulness-enhanced/result_enhanced/*.aux
+/parametric-faithfulness-enhanced/result_enhanced/*.log
+/parametric-faithfulness-enhanced/result_enhanced/*.nav
+/parametric-faithfulness-enhanced/result_enhanced/*.snm
+/parametric-faithfulness-enhanced/result_enhanced/*.toc
+/parametric-faithfulness-enhanced/result_enhanced/beamer_preview/
 
 # Python/runtime caches
 __pycache__/

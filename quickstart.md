@@ -1,4 +1,4 @@
-# quickstard: 项目文件作用说明
+# quickstart: 项目文件作用说明
 
 本项目复现论文 "Measuring Faithfulness of Chains of Thought by Unlearning Reasoning Steps"。核心思想是：先让模型在多个选择题数据集上生成 CoT，再对某个 CoT 步骤做 unlearning，观察答案是否变化、其他样本是否保持稳定，从而衡量 CoT 步骤的 faithfulness。
 
@@ -29,11 +29,8 @@ python unlearn.py --model_name meta-llama/Llama-3.2-3B-Instruct --strategy sente
 `requirements.txt`
 Python 依赖清单。已经包含 GPU 版 PyTorch、Transformers、Datasets、spaCy、NLTK、lm-eval、notebook/画图依赖等。服务器复现时优先使用它安装。
 
-`quickstard.md`
+`quickstart.md`
 当前文件，用来解释项目结构、每个文件的功能以及不同功能如何串起来实现。
-
-`server.md`
-服务器复现实验的操作说明，重点覆盖 NLTK 数据、Hugging Face 登录、结果目录放置、Slurm/命令行运行方式。
 
 `.gitignore`
 用于防止把大结果、模型 checkpoint、缓存、token 文件提交到 GitHub。现在已经忽略 `ablation/`、`final_results/`、`ablation.zip`、`final_results.zip` 等。
@@ -199,4 +196,4 @@ LLM-as-judge 的判断结果 jsonl。
 优先在 `plotting.py` 写通用绘图函数，再在 notebook 中加载结果并调用。
 
 服务器批量复现：
-可以参考 `run_scripts.py` 输出的 `sbatch` 命令结构；如果服务器没有对应 `.job` 文件，需要按 `server.md` 里的 Slurm 模板补一个。
+可以参考 `run_scripts.py` 输出的 `sbatch` 命令结构；如果服务器没有对应 `.job` 文件，需要按 `readme.md` 或对应子项目 README 里的服务器命令补一个。

@@ -8,6 +8,9 @@ import numpy as np
 colors = ['r', 'g', 'b', 'k', 'y']
 
 model_scatter_style = {
+    'Qwen3-8B': 'P',
+    'Qwen3-3B': 'X',
+    'Qwen3-1.7B': 'v',
     'Phi-3': 's',
     'LLaMA-3': 'o',
     'LLaMA-3-3B': '*',
@@ -15,6 +18,9 @@ model_scatter_style = {
 }
 
 model_to_nice_model = {
+    'Qwen3-8B': 'Qwen3-8B',
+    'Qwen3-3B': 'Qwen3-3B',
+    'Qwen3-1.7B': 'Qwen3-1.7B',
     'Phi-3': 'Phi-3',
     'LLaMA-3': 'LLaMA-3-8B',
     'LLaMA-3-3B': 'LLaMA-3-3B',
@@ -22,6 +28,7 @@ model_to_nice_model = {
 }
 
 dataset_to_nice_dataset = {
+    'ceval': 'C-Eval',
     'arc-challenge': 'ARC-Challenge',
     'openbook': 'OpenBookQA',
     'sqa': 'StrategyQA',
@@ -29,6 +36,9 @@ dataset_to_nice_dataset = {
 }
 
 model_color = {
+    'Qwen3-8B': 'tab:purple',
+    'Qwen3-3B': 'tab:cyan',
+    'Qwen3-1.7B': 'tab:pink',
     'Phi-3': 'tab:blue',
     'LLaMA-3': 'tab:red',
     'LLaMA-3-3B': 'tab:orange',
@@ -36,6 +46,9 @@ model_color = {
 }
 
 model_color_simple = {
+    'Qwen3-8B': 'm',
+    'Qwen3-3B': 'c',
+    'Qwen3-1.7B': 'pink',
     'Phi-3': 'b',
     'LLaMA-3': 'r',
     'LLaMA-3-3B': 'k',

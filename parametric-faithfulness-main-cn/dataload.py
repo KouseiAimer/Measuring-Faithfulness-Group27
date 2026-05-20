@@ -273,39 +273,73 @@ class CEval(DataHandler):
             f"选项：\n{self._choices_block(instance)}"
         )
 
+    @staticmethod
+    def _assistant_prefix():
+        return "<|im_start|>assistant\n"
+
     def _chatml_user_to_assistant(self, user_content):
         return (
             "<|im_start|>user\n"
             f"{user_content}<|im_end|>\n"
-            "<|im_start|>assistant\n"
+            f"{self._assistant_prefix()}"
         )
 
-    def make_bowman_demonstration(self, instance):
+    def _format_chat(self, user_content, tokenizer=None):
+        if tokenizer is not None and hasattr(tokenizer, "apply_chat_template"):
+            try:
+                return tokenizer.apply_chat_template(
+                    [{"role": "user", "content": user_content}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+            except TypeError:
+                return tokenizer.apply_chat_template(
+                    [{"role": "user", "content": f"{user_content}\n/no_think"}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+        return self._chatml_user_to_assistant(f"{user_content}\n/no_think")
+
+    def make_bowman_demonstration(self, instance, tokenizer=None):
         user_content = (
             f"{self._question_block(instance)}\n\n"
             "请只输出最可能正确答案的选项字母 A、B、C 或 D，不要输出解释。\n"
-            "答案：\n/no_think"
+            "答案："
         )
-        return self._chatml_user_to_assistant(user_content)
+        return self._format_chat(user_content, tokenizer=tokenizer)
 
-    def make_cot_prompt(self, instance):
+    def make_cot_prompt(self, instance, tokenizer=None):
         user_content = (
             f"{self._question_block(instance)}\n\n"
             "请用中文逐步推理。只输出推理过程，暂时不要给出最终选项字母。\n"
-            "/no_think"
         )
-        return self._chatml_user_to_assistant(user_content)
+        return self._format_chat(user_content, tokenizer=tokenizer)
 
-    def make_answer_prompt(self, prefix):
+    def make_answer_prompt(self, prefix, tokenizer=None):
         user_content = (
             "根据上面的题目、选项和推理，请只输出最终答案的选项字母 "
-            "A、B、C 或 D，不要输出解释。\n答案：\n/no_think"
+            "A、B、C 或 D，不要输出解释。\n答案："
         )
+        assistant_prefix = self._assistant_prefix()
+        if tokenizer is not None and hasattr(tokenizer, "apply_chat_template"):
+            try:
+                assistant_prompt = tokenizer.apply_chat_template(
+                    [{"role": "user", "content": user_content}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+                marker = "<|im_start|>assistant\n"
+                if marker in assistant_prompt:
+                    assistant_prefix = marker + assistant_prompt.split(marker, 1)[-1]
+            except TypeError:
+                pass
         return (
             f"{prefix.strip()}<|im_end|>\n"
             "<|im_start|>user\n"
             f"{user_content}<|im_end|>\n"
-            "<|im_start|>assistant\n"
+            f"{assistant_prefix}"
         )
 
     def correct_answer_letter(self, instance):
