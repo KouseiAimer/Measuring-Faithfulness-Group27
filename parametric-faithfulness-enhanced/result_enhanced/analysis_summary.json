@@ -1,0 +1,107 @@
+{
+  "merged_files": {
+    "full": "result_enhanced/full_merged.jsonl",
+    "last_top1": "result_enhanced/last_top1_merged.jsonl",
+    "random_top1": "result_enhanced/random_top1_merged.jsonl"
+  },
+  "notes": {
+    "lr_filename_fix": "Original launcher looked for lr=3e-5 merged files, while unlearn.py wrote lr=3e-05 shard files. This analysis merges the actual lr=3e-05 shard outputs.",
+    "run_scope": "openbook, Llama-3.2-3B-Instruct, max_samples=100, n_unlearn=80, verify_samples=20, epochs=2, 3 shards."
+  },
+  "summary": [
+    {
+      "run": "full",
+      "run_label": "Full FUR",
+      "rows_unlearned": 431,
+      "instances_covered": 80,
+      "mean_steps_per_instance": 5.3875,
+      "step_flip_count": 122,
+      "step_flip_rate_pct": 28.306264501160094,
+      "faithful_instance_count": 53,
+      "faithful_instance_rate_pct": 66.25,
+      "mean_efficacy_pct": 89.9427807703297,
+      "median_efficacy_pct": 90.84275667822239,
+      "mean_specificity_pct": 94.51276102088167,
+      "mean_original_answer_mass_shift": 0.1355241858859001,
+      "median_original_answer_mass_shift": 0.0378907097394075,
+      "max_original_answer_mass_shift": 0.9271545400868616,
+      "mean_total_variation": 0.24402106655617953,
+      "cost_reduction_vs_full_pct": 0.0,
+      "probability_sums_ok": true
+    },
+    {
+      "run": "last_top1",
+      "run_label": "Last-step top1",
+      "rows_unlearned": 78,
+      "instances_covered": 78,
+      "mean_steps_per_instance": 1.0,
+      "step_flip_count": 22,
+      "step_flip_rate_pct": 28.205128205128204,
+      "faithful_instance_count": 22,
+      "faithful_instance_rate_pct": 28.205128205128204,
+      "mean_efficacy_pct": 88.95657304526539,
+      "median_efficacy_pct": 89.86107152959427,
+      "mean_specificity_pct": 94.74358974358974,
+      "mean_original_answer_mass_shift": 0.13605052332777937,
+      "median_original_answer_mass_shift": 0.04693441272249971,
+      "max_original_answer_mass_shift": 0.8944529024437767,
+      "mean_total_variation": 0.22660558842756848,
+      "cost_reduction_vs_full_pct": 81.90255220417633,
+      "probability_sums_ok": true
+    },
+    {
+      "run": "random_top1",
+      "run_label": "Random top1",
+      "rows_unlearned": 71,
+      "instances_covered": 71,
+      "mean_steps_per_instance": 1.0,
+      "step_flip_count": 21,
+      "step_flip_rate_pct": 29.577464788732392,
+      "faithful_instance_count": 21,
+      "faithful_instance_rate_pct": 29.577464788732392,
+      "mean_efficacy_pct": 89.65248465522748,
+      "median_efficacy_pct": 90.09865916361737,
+      "mean_specificity_pct": 93.73239436619718,
+      "mean_original_answer_mass_shift": 0.14460723033042364,
+      "median_original_answer_mass_shift": 0.0437976964366652,
+      "max_original_answer_mass_shift": 0.7908956787718907,
+      "mean_total_variation": 0.24692412471272782,
+      "cost_reduction_vs_full_pct": 83.52668213457076,
+      "probability_sums_ok": true
+    }
+  ],
+  "recovery": [
+    {
+      "run": "last_top1",
+      "run_label": "Last-step top1",
+      "selected_rows": 78,
+      "selected_instances": 78,
+      "full_rows": 431,
+      "full_faithful_instances": 53,
+      "found_faithful_instances": 22,
+      "recovery_at_1_full_denominator_pct": 41.509433962264154,
+      "recovery_at_1_overlap_denominator_pct": 42.30769230769231,
+      "coverage_of_full_instances_pct": 97.5,
+      "cost_reduction_pct": 81.90255220417633,
+      "step_hit_at_1_pct": 17.21311475409836,
+      "selected_step_precision_pct": 26.923076923076923,
+      "faithfulness_per_100_unlearns": 28.205128205128204
+    },
+    {
+      "run": "random_top1",
+      "run_label": "Random top1",
+      "selected_rows": 71,
+      "selected_instances": 71,
+      "full_rows": 431,
+      "full_faithful_instances": 53,
+      "found_faithful_instances": 21,
+      "recovery_at_1_full_denominator_pct": 39.62264150943396,
+      "recovery_at_1_overlap_denominator_pct": 44.680851063829785,
+      "coverage_of_full_instances_pct": 88.75,
+      "cost_reduction_pct": 83.52668213457076,
+      "step_hit_at_1_pct": 18.852459016393443,
+      "selected_step_precision_pct": 32.3943661971831,
+      "faithfulness_per_100_unlearns": 29.577464788732392
+    }
+  ]
+}

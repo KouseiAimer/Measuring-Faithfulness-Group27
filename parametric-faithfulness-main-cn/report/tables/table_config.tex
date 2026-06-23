@@ -1,0 +1,15 @@
+\begin{table}[H]
+\centering
+\small
+\caption{三组输出的完整性审计。可比题指初始 direct 与 CoT 预测一致的题目。}
+\label{tab:config}
+\begin{tabular}{lrrrrr}
+\toprule
+模型 & CoT 数 & 目标题 & 步骤数 & Epoch & 可比题 \\
+\midrule
+Qwen3-8B & 250 & 230 & 498 & 5 & 202 \\
+Qwen3-4B & 250 & 230 & 344 & 5 & 177 \\
+Qwen3-4B & 220 & 200 & 299 & 10 & 154 \\
+\bottomrule
+\end{tabular}
+\end{table}

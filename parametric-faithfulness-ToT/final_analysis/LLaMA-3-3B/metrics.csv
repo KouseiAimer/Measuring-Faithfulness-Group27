@@ -1,0 +1,2 @@
+dataset,dataset_name,arm,path,status,n_steps,n_questions,expected_questions,n_agreement_questions,eff,eff_final,spec,spec_final,gen_mmlu,post_cot_agree,faithfulness,ff_hard_all,ff_soft,ff_soft_all
+openbook,OpenBookQA,CoT,final_result_CoT/openbook/LLaMA-3-3B/cot_npo_KL_sentencize_s=True_lr=3e-05_rs=1001_n=50_pos=True_ff2=True.out,running,32,7,50,6,85.17391215000632,90.16061869580034,95.40625,94.6875,nan,79.375,83.33333333333334,85.71428571428571,52.974446762446426,58.50019831046523

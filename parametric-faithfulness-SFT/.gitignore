@@ -1,0 +1,7 @@
+.env
+artifacts/
+logs/
+local_models/
+local_datasets/
+__pycache__/
+*.pyc

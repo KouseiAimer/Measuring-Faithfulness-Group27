@@ -1,0 +1,3 @@
+run,run_label,selected_rows,selected_instances,full_rows,full_faithful_instances,found_faithful_instances,recovery_at_1_full_denominator_pct,recovery_at_1_overlap_denominator_pct,coverage_of_full_instances_pct,cost_reduction_pct,step_hit_at_1_pct,selected_step_precision_pct,faithfulness_per_100_unlearns
+last_top1,Last-step top1,78,78,431,53,22,41.509433962264154,42.30769230769231,97.5,81.90255220417633,17.21311475409836,26.923076923076923,28.205128205128204
+random_top1,Random top1,71,71,431,53,21,39.62264150943396,44.680851063829785,88.75,83.52668213457076,18.852459016393443,32.3943661971831,29.577464788732392

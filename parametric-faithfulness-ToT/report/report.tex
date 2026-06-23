@@ -1,0 +1,163 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=0.78in]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage{array}
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black}
+\definecolor{cotblue}{HTML}{2166AC}
+\definecolor{totred}{HTML}{B2182B}
+\title{\vspace{-1.2cm}\textbf{Measuring Parametric Faithfulness of Chain and Tree Reasoning}\\
+\large A Controlled CoT vs. ToT Comparison with Llama-3.2-3B-Instruct}
+\author{Experiment report}
+\date{May 27, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This report extends Faithfulness by Unlearning Reasoning Steps (FUR) from
+single-path chain-of-thought (CoT) reasoning to selected tree-of-thought (ToT)
+reasoning. We evaluate Llama-3.2-3B-Instruct on OpenBookQA and ARC-Challenge,
+using identical NPO+KL unlearning parameters for CoT and ToT. ToT improves
+parametric faithfulness most clearly on ARC-Challenge: on the paired
+agreement-eligible subset, FF-HARD rises by 3.2 percentage points. On
+OpenBookQA, paired FF-HARD is unchanged, although ToT increases soft influence
+and unfiltered answer flips.
+\end{abstract}
+
+\section{Experimental Design}
+We use \texttt{Llama-3.2-3B-Instruct} with OpenBookQA (50 target questions and
+20 held-out specificity questions) and ARC-Challenge (100 target questions and
+20 held-out specificity questions). Each unlearning operation applies NPO+KL
+for five epochs with learning rate \(3\times 10^{-5}\), updates only
+\texttt{mlp.down\_proj.weight}, and targets POS-filtered content tokens.
+
+The CoT condition uses a single greedily generated reasoning path. The ToT
+condition evaluates two multi-path procedures on a 30-item validation set:
+\texttt{sample-select}, which samples five complete paths and selects the
+highest-confidence answer path, and \texttt{beam-prune}, which expands and
+prunes partial thoughts. The selected procedure is then used for the full test
+comparison.
+
+\section{Result Integrity}
+All primary result files completed successfully. We found no malformed JSON
+record, duplicate target-step record, missing epoch in the expected
+\(0,\ldots,5\) sequence, out-of-split target ID, logged exception, or CUDA
+out-of-memory failure.
+
+\begin{table}[H]
+\centering
+\caption{Completeness audit of the four primary experiments.}
+\label{tab:integrity}
+\begin{tabular}{llrr}
+\toprule
+Dataset & Reasoning & Target coverage & Valid steps \\
+\midrule
+OpenBookQA & CoT & 50/50 & 286 \\
+OpenBookQA & ToT-selected & 50/50 & 297 \\
+ARC-Challenge & CoT & 100/100 & 752 \\
+ARC-Challenge & ToT-selected & 100/100 & 672 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Metrics}
+\textbf{Efficacy (Eff)} is the percentage reduction in length-normalized
+probability of an unlearned reasoning step. \textbf{Specificity (Spec)} is the
+agreement on the held-out in-domain questions after unlearning.
+\textbf{FF-HARD} follows the FUR protocol: a question is faithful if
+unlearning any reasoning step changes the direct answer, measured on questions
+where direct and reasoning-conditioned answers agree initially.
+\textbf{Max FF-SOFT} is the mean maximum reduction of initial-answer
+probability mass per eligible question. We additionally report unfiltered
+\textbf{FF-HARD (all)} and post-unlearning \textbf{Post-CoT Agree}.
+
+The original paper's \textbf{Gen} metric denotes post-unlearning zero-shot MMLU
+accuracy. The optional MMLU supplemental evaluations were not executed in this
+experiment; consequently, Gen is marked unavailable rather than estimated from
+a different statistic.
+
+\section{Main Results}
+\begingroup
+\small
+\input{tables/table_controls.tex}
+\input{tables/table_faithfulness.tex}
+\endgroup
+
+\input{tables/table_deltas.tex}
+
+On ARC-Challenge, ToT-selected increases efficacy by 3.8 points and
+paper-protocol FF-HARD by 3.4 points, while changing specificity by only
+\(-0.2\) points. Its Max FF-SOFT gain is 7.3 points. On OpenBookQA, ToT
+increases efficacy by 0.6 points and Max FF-SOFT by 5.2 points, while its
+paper-protocol FF-HARD is effectively unchanged (\(-0.7\) points).
+
+The agreement filter selects slightly different questions for CoT and ToT.
+Table~\ref{tab:paired-faithfulness} therefore provides a stricter comparison
+on the common eligible subset. It confirms a ToT advantage on ARC-Challenge,
+but not on OpenBookQA.
+
+\input{tables/table_paired_faithfulness.tex}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/eff_spec_faithfulness.pdf}
+\caption{Efficacy--specificity tradeoff. Marker area encodes protocol
+FF-HARD; ToT shifts ARC-Challenge toward higher efficacy with nearly unchanged
+specificity.}
+\label{fig:effspec}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{figures/faithfulness_comparison.pdf}
+\caption{Protocol FF-HARD comparison for CoT and ToT-selected reasoning.}
+\label{fig:faithfulness}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/unlearning_trajectories.pdf}
+\caption{Efficacy and specificity trajectories across unlearning epochs.}
+\label{fig:trajectories}
+\end{figure}
+
+\section{Selection of the ToT Procedure}
+\input{tables/table_tot_selection.tex}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.84\textwidth]{figures/tot_mode_selection.pdf}
+\caption{Validation comparison of candidate ToT procedures. The
+best-of-five \texttt{sample-select} method is selected for both datasets.}
+\label{fig:selector}
+\end{figure}
+
+\section{Discussion and Limitations}
+The results indicate that multi-path selected reasoning can expose stronger
+parametric dependence than a greedy CoT, especially for ARC-Challenge. The
+effect is not universal: OpenBookQA shows increased soft influence and
+unfiltered flips, but no gain in paired hard faithfulness. This distinction is
+important because ToT changes both the selected reasoning and the eligible set
+for the paper-protocol metric.
+
+This study evaluates validation-selected best-of-five reasoning rather than all
+possible tree-search algorithms. It also does not include the optional MMLU
+general-capability supplement, so general preservation is supported only by
+same-domain specificity here. These limitations do not affect the completeness
+of the main CoT--ToT comparison, but constrain its broader interpretation.
+
+\section*{References}
+\begin{enumerate}
+\item Martin Tutek et al. \textit{Measuring Chain of Thought Faithfulness by
+Unlearning Reasoning Steps}. 2025. \url{https://arxiv.org/abs/2502.14829}.
+\item Shunyu Yao et al. \textit{Tree of Thoughts: Deliberate Problem Solving
+with Large Language Models}. 2023. \url{https://arxiv.org/abs/2305.10601}.
+\end{enumerate}
+
+\end{document}

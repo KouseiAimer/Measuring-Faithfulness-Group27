@@ -1,0 +1,3 @@
+dataset,dataset_name,n_common_agreement,cot_ff_hard,tot_ff_hard,delta_ff_hard
+openbook,OpenBookQA,37,70.27027027027027,70.27027027027027,0.0
+arc-challenge,ARC-Challenge,62,64.51612903225806,67.74193548387096,3.225806451612897

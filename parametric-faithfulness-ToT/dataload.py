@@ -8,7 +8,7 @@ from tqdm import tqdm
 from typing import ClassVar
 from dataclasses import dataclass
 
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 
 ANSWER_CANDIDATE_SEP = ", "
 
@@ -291,7 +291,8 @@ class OpenQA(DataHandler):
         return instance[self.q_key]
 
     def get_dataset_splits(self):
-        dataset = load_dataset(self.key)
+        local_path = Path(__file__).resolve().parent / "local_datasets" / "openbookqa"
+        dataset = load_from_disk(str(local_path)) if local_path.exists() else load_dataset(self.key)
         return dataset['train'], dataset['validation'], dataset["test"]
 
     def get_answer_letters(self, instance):
@@ -578,20 +579,9 @@ class ARC(DataHandler):
         return instance[self.q_key]
 
     def get_dataset_splits(self):
-        try:
-            dataset = load_dataset(self.key, self.subkey)
-        except Exception as exc:
-            local_root = Path(__file__).resolve().parent / "local_datasets" / "ai2_arc" / self.subkey
-            if not local_root.exists():
-                raise exc
-            dataset = load_dataset(
-                "parquet",
-                data_files={
-                    "train": str(local_root / "train-00000-of-00001.parquet"),
-                    "validation": str(local_root / "validation-00000-of-00001.parquet"),
-                    "test": str(local_root / "test-00000-of-00001.parquet"),
-                },
-            )
+        local_name = self.subkey.lower().replace("-", "_")
+        local_path = Path(__file__).resolve().parent / "local_datasets" / local_name
+        dataset = load_from_disk(str(local_path)) if local_path.exists() else load_dataset(self.key, self.subkey)
         return dataset["train"], dataset["validation"], dataset["test"]
 
     def get_answer_letters(self, instance):

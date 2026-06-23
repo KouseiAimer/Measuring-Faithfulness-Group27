@@ -1,0 +1,4 @@
+run_label,faithful_instances,faithful_rate_pct,faithful_rate_95ci,step_flips,step_flip_rate_pct,step_flip_95ci
+Full FUR,53/80,66.25,"[55.4, 75.7]",122/431,28.31,"[24.3, 32.7]"
+Last-step top1,22/78,28.21,"[19.4, 39.0]",22/78,28.21,"[19.4, 39.0]"
+Random top1,21/71,29.58,"[20.2, 41.0]",21/71,29.58,"[20.2, 41.0]"

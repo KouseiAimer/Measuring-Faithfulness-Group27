@@ -1,0 +1,8 @@
+{
+  "paired_questions": 100,
+  "common_agreement_questions": 75,
+  "base_agreement_only": 7,
+  "sft_agreement_only": 10,
+  "bootstrap_repetitions": 10000,
+  "bootstrap_seed": 1001
+}

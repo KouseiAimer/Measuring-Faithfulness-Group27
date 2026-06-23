@@ -1,0 +1,15 @@
+\begin{table}[H]
+\centering
+\small
+\caption{统一 5 epoch 预算下的论文式比较。Eff/Spec 使用全部步骤；忠实度只使用初始预测一致的题目。}
+\label{tab:standard}
+\begin{tabular}{lrrrrr}
+\toprule
+实验 & Eff & Spec & FF-HARD & Step FF & Max FF-SOFT \\
+\midrule
+Qwen3-8B & 63.12 & 96.78 & 7.92\% & 4.68\% & 6.59 \\
+Qwen3-4B & 74.81 & 98.54 & 8.47\% & 7.01\% & 7.19 \\
+Qwen3-4B ($n=220$, 截至 E5) & 79.70 & 97.94 & 11.69\% & 9.32\% & 9.05 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,4 @@
+key,model,cot_samples,epochs,target_questions,expected_targets,step_rows,eligible_questions,duplicate_steps,incomplete_epoch_rows,status,path
+8b_n250_e5,Qwen3-8B,250,5,230,230,498,202,0,0,complete,/inspire/hdd/project/fdu-aidake-cfff/public/liangyanpeng/Measuring-Faithfulness-Group27/parametric-faithfulness-main-cn/final_results/ceval/Qwen3-8B/npo_KL_sentencize_s=True_lr=1e-05_rs=1001_n=250_pos=False_ff2=True.out
+4b_n250_e5,Qwen3-4B,250,5,230,230,344,177,0,0,complete,/inspire/hdd/project/fdu-aidake-cfff/public/liangyanpeng/Measuring-Faithfulness-Group27/parametric-faithfulness-main-cn/final_results/ceval/Qwen3-4B/npo_KL_sentencize_s=True_lr=1e-05_rs=1001_n=250_pos=False_ff2=True.out
+4b_n220_e10,Qwen3-4B,220,10,200,200,299,154,0,0,complete,/inspire/hdd/project/fdu-aidake-cfff/public/liangyanpeng/Measuring-Faithfulness-Group27/parametric-faithfulness-main-cn/final_results/ceval/Qwen3-4B/npo_KL_sentencize_s=True_lr=1e-05_rs=1001_n=220_pos=False_ff2=True.out

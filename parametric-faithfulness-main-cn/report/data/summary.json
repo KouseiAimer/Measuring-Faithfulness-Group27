@@ -1,0 +1,155 @@
+{
+  "audit": [
+    {
+      "key": "8b_n250_e5",
+      "model": "Qwen3-8B",
+      "cot_samples": 250,
+      "epochs": 5,
+      "target_questions": 230,
+      "expected_targets": 230,
+      "step_rows": 498,
+      "eligible_questions": 202,
+      "duplicate_steps": 0,
+      "incomplete_epoch_rows": 0,
+      "status": "complete",
+      "path": "/inspire/hdd/project/fdu-aidake-cfff/public/liangyanpeng/Measuring-Faithfulness-Group27/parametric-faithfulness-main-cn/final_results/ceval/Qwen3-8B/npo_KL_sentencize_s=True_lr=1e-05_rs=1001_n=250_pos=False_ff2=True.out"
+    },
+    {
+      "key": "4b_n250_e5",
+      "model": "Qwen3-4B",
+      "cot_samples": 250,
+      "epochs": 5,
+      "target_questions": 230,
+      "expected_targets": 230,
+      "step_rows": 344,
+      "eligible_questions": 177,
+      "duplicate_steps": 0,
+      "incomplete_epoch_rows": 0,
+      "status": "complete",
+      "path": "/inspire/hdd/project/fdu-aidake-cfff/public/liangyanpeng/Measuring-Faithfulness-Group27/parametric-faithfulness-main-cn/final_results/ceval/Qwen3-4B/npo_KL_sentencize_s=True_lr=1e-05_rs=1001_n=250_pos=False_ff2=True.out"
+    },
+    {
+      "key": "4b_n220_e10",
+      "model": "Qwen3-4B",
+      "cot_samples": 220,
+      "epochs": 10,
+      "target_questions": 200,
+      "expected_targets": 200,
+      "step_rows": 299,
+      "eligible_questions": 154,
+      "duplicate_steps": 0,
+      "incomplete_epoch_rows": 0,
+      "status": "complete",
+      "path": "/inspire/hdd/project/fdu-aidake-cfff/public/liangyanpeng/Measuring-Faithfulness-Group27/parametric-faithfulness-main-cn/final_results/ceval/Qwen3-4B/npo_KL_sentencize_s=True_lr=1e-05_rs=1001_n=220_pos=False_ff2=True.out"
+    }
+  ],
+  "standard_five_epoch": [
+    {
+      "key": "8b_n250_e5",
+      "model": "Qwen3-8B",
+      "cot_samples": 250,
+      "evaluated_epochs": 5,
+      "target_questions": 230,
+      "step_rows": 498,
+      "eff": 63.124151959830506,
+      "spec": 96.78313253012048,
+      "eligible_questions": 202,
+      "eligible_steps": 449,
+      "ff_hard": 7.920792079207921,
+      "step_ff_hard": 4.67706013363029,
+      "max_ff_soft": 6.59145327171639,
+      "ff_hard_all": 10.0
+    },
+    {
+      "key": "4b_n250_e5",
+      "model": "Qwen3-4B",
+      "cot_samples": 250,
+      "evaluated_epochs": 5,
+      "target_questions": 230,
+      "step_rows": 344,
+      "eff": 74.81220099050394,
+      "spec": 98.5436046511628,
+      "eligible_questions": 177,
+      "eligible_steps": 271,
+      "ff_hard": 8.47457627118644,
+      "step_ff_hard": 7.011070110701106,
+      "max_ff_soft": 7.18942401181131,
+      "ff_hard_all": 10.434782608695652
+    },
+    {
+      "key": "4b_n220_e10",
+      "model": "Qwen3-4B",
+      "cot_samples": 220,
+      "evaluated_epochs": 5,
+      "target_questions": 200,
+      "step_rows": 299,
+      "eff": 79.7013614090643,
+      "spec": 97.93979933110369,
+      "eligible_questions": 154,
+      "eligible_steps": 236,
+      "ff_hard": 11.688311688311687,
+      "step_ff_hard": 9.322033898305085,
+      "max_ff_soft": 9.052198772423603,
+      "ff_hard_all": 13.0
+    }
+  ],
+  "endpoints": [
+    {
+      "key": "8b_n250_e5",
+      "model": "Qwen3-8B",
+      "cot_samples": 250,
+      "endpoint_epoch": 5,
+      "eff": 71.50331830210628,
+      "spec": 96.83734939759036,
+      "ff_hard_all": 9.130434782608695,
+      "step_ff_hard_all": 5.020080321285141,
+      "mean_ff_soft_all": 3.357407237717818,
+      "eligible_questions": 202,
+      "ff_hard_eligible": 6.9306930693069315
+    },
+    {
+      "key": "4b_n250_e5",
+      "model": "Qwen3-4B",
+      "cot_samples": 250,
+      "endpoint_epoch": 5,
+      "eff": 81.4996906419227,
+      "spec": 98.56104651162791,
+      "ff_hard_all": 9.565217391304348,
+      "step_ff_hard_all": 8.13953488372093,
+      "mean_ff_soft_all": 4.377999689776161,
+      "eligible_questions": 177,
+      "ff_hard_eligible": 7.909604519774012
+    },
+    {
+      "key": "4b_n220_e10",
+      "model": "Qwen3-4B",
+      "cot_samples": 220,
+      "endpoint_epoch": 10,
+      "eff": 90.24985571400538,
+      "spec": 98.04347826086956,
+      "ff_hard_all": 12.0,
+      "step_ff_hard_all": 9.364548494983277,
+      "mean_ff_soft_all": 6.082218409195498,
+      "eligible_questions": 154,
+      "ff_hard_eligible": 10.38961038961039
+    }
+  ],
+  "paired": [
+    {
+      "key": "8b_n250_e5",
+      "model": "8B",
+      "common_eligible_questions": 158,
+      "ff_hard_through_e5": 6.962025316455696,
+      "ff_hard_endpoint_e5": 6.329113924050633,
+      "max_ff_soft_through_e5": 6.580973483638934
+    },
+    {
+      "key": "4b_n250_e5",
+      "model": "4B",
+      "common_eligible_questions": 158,
+      "ff_hard_through_e5": 7.59493670886076,
+      "ff_hard_endpoint_e5": 6.962025316455696,
+      "max_ff_soft_through_e5": 6.577219949196971
+    }
+  ]
+}

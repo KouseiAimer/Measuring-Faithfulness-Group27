@@ -1,0 +1,3 @@
+arm,model,target_cots,measured_questions,measured_steps,direct_accuracy,cot_accuracy,direct_cot_agreement,mean_steps,mean_words,efficacy,efficacy_final,specificity,specificity_final,ff_hard_all,ff_hard_agree,ff_soft_all,ff_soft_agree,eligible_agreement_questions,mean_initial_margin,mean_initial_margin_agree
+base,Base LLaMA-3B,100,100,495,70.0,73.0,82.0,6.37,81.33,92.57604967229373,96.69002920579506,94.03838383838384,92.63636363636364,72.0,70.73170731707317,51.97337569203228,54.094708256605195,82,66.40457153320312,70.6624473013529
+sft,DeepSeek-Revision SFT,100,100,311,73.0,77.0,85.0,3.12,40.49,97.6224143948111,99.43604966438436,98.79421221864952,98.2475884244373,67.0,65.88235294117646,52.8654682636261,56.072555149302765,85,73.16358947753906,79.78948256548713

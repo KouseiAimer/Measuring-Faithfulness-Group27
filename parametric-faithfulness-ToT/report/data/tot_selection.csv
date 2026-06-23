@@ -1,0 +1,5 @@
+dataset,dataset_name,mode,selected,accuracy,winning_confidence,distinct_paths,vote_entropy
+openbook,OpenBookQA,sample_select,True,80.0,100.0,5.0,0.319544956704787
+openbook,OpenBookQA,beam_prune,False,70.0,98.92291069030762,2.966666666666667,0.10608569471580213
+arc-challenge,ARC-Challenge,sample_select,True,80.0,100.0,5.0,0.3283254426519733
+arc-challenge,ARC-Challenge,beam_prune,False,76.66666666666667,100.0,3.0,0.12730283365896256

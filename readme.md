@@ -1,145 +1,247 @@
-# Parametric Faithfulness 项目快速启动
+# Measuring Faithfulness of Chains of Thought by Unlearning Reasoning Steps
 
-项目主体在 `parametric-faithfulness-main/`，主要实验入口是 `unlearn.py`。根目录的 `requirements.txt` 已整理好项目运行、评估脚本和 notebook 分析所需的 Python 依赖。
+本仓库是复现与扩展论文 **"Measuring Faithfulness of Chains of Thought by Unlearning Reasoning Steps"** 的课程项目代码库。原论文提出 Faithfulness by Unlearning Reasoning Steps (FUR)：对模型生成的 Chain-of-Thought (CoT) 中某个 reasoning step 做参数遗忘，如果遗忘后模型的最终答案或答案概率发生显著变化，则说明该 step 与模型参数化决策之间存在更强联系。
 
-## 1. 创建并激活 conda 环境
+本项目在官方代码基础上完成了四类工作：
 
-本机已创建环境：
+- 复现原始 FUR 流程；
+- 将 FUR 扩展到中文 C-Eval/Qwen3 设置；
+- 实现 Selective / Efficient FUR，用更少的 step unlearning 近似 Full FUR；
+- 探索 ToT-FUR 与 DeepSeek-revision SFT 后测两条扩展路线。
 
-```powershell
-conda create -y -n parametric-faithfulness python=3.10 pip
-conda activate parametric-faithfulness
+代码仓库只保存源码、脚本、文档和轻量示例文件。完整实验结果、模型权重、本地缓存、日志和大体积报告产物不进入 GitHub，统一放在 ModelScope 数据集仓库：
+
+https://www.modelscope.cn/datasets/KouseiAimer/Measuring-Faithfulness-Group27
+
+## Repository Layout
+
+```text
+.
+├── parametric-faithfulness-main/        # 原论文英文 FUR 复现主体
+├── parametric-faithfulness-main-cn/     # 中文 C-Eval + Qwen3 复现与分析
+├── parametric-faithfulness-enhanced/    # Selective / Efficient FUR 扩展
+├── parametric-faithfulness-ToT/         # Tree-of-Thoughts FUR 扩展
+├── parametric-faithfulness-SFT/         # DeepSeek revision SFT + FUR 后测扩展
+├── requirements.txt                     # Python 依赖
+├── quickstart.md                        # 主要文件和运行链路说明
+├── enhanced.md                          # Efficient FUR 选题与文献整理
+└── enhanced2.md                         # Enhanced FUR 实验方案
 ```
 
-如果环境已经存在，只需要执行：
+## Original FUR Reproduction
 
-```powershell
-conda activate parametric-faithfulness
+主入口位于：
+
+```text
+parametric-faithfulness-main/unlearn.py
 ```
 
-## 2. 安装依赖
+一次实验的大致流程如下：
 
-`requirements.txt` 使用 CUDA 12.6 版 PyTorch，适配本机 NVIDIA 驱动显示的 CUDA 12.6：
+1. `dataload.py` 构造数据集 prompt 和选项；
+2. `evaluate.py` 生成 CoT 并计算答案概率；
+3. `data.py` 将 CoT 切分为 forget/retain 训练样本；
+4. `unlearn.py` 使用 NPO / NPO+KL 对目标 step 做 unlearning；
+5. `stats.py` 和 notebook 汇总 efficacy、specificity、FF-HARD、FF-SOFT 等指标。
 
-```powershell
-pip install --no-cache-dir -r requirements.txt
-```
-
-其中包括：
-
-- 训练/推理：`torch==2.11.0+cu126`、`transformers`、`accelerate`、`datasets`
-- 分词和文本处理：`nltk`、`spacy`、`en_core_web_sm`
-- 评估：`lm-eval[hf]`
-- notebook/画图：`jupyterlab`、`ipykernel`、`matplotlib`、`pandas`、`scipy`、`seaborn`
-- LLM API notebook：`openai`
-
-## 3. 下载 NLTK 数据
-
-项目会用 `nltk.sent_tokenize` 做 CoT 句子切分，需要补齐 NLTK 数据：
-
-```powershell
-python -m nltk.downloader punkt punkt_tab
-```
-
-## 4. 配置 Hugging Face 权限
-
-如果运行 LLaMA、Mistral 等需要授权的 Hugging Face 模型，需要先申请模型访问权限，并配置 token。任选一种方式即可：
-
-```powershell
-huggingface-cli login
-```
-
-或在当前 PowerShell 会话中设置：
-
-```powershell
-$env:HF_TOKEN="hf_xxx"
-```
-
-如果希望长期保存到系统环境变量：
-
-```powershell
-setx HF_TOKEN "hf_xxx"
-```
-
-新打开终端后再 `conda activate parametric-faithfulness`。
-
-## 5. 验证环境
-
-```powershell
-python -c "import torch, spacy; print(torch.__version__); print(torch.cuda.is_available()); spacy.load('en_core_web_sm'); print('ok')"
-cd parametric-faithfulness-main
-python unlearn.py --help
-lm_eval --help
-```
-
-本机已验证：
-
-- PyTorch：`2.11.0+cu126`
-- CUDA 可用：`True`
-- GPU：`NVIDIA GeForce RTX 4060 Laptop GPU`
-- `spacy.load('en_core_web_sm')` 可用
-- `python unlearn.py --help` 可用
-- `lm_eval --help` 可用
-
-## 6. 启动实验示例
-
-进入项目主体目录后运行：
-
-```powershell
-cd parametric-faithfulness-main
-python unlearn.py --model_name meta-llama/Llama-3.2-3B-Instruct --strategy sentencize --stepwise --dataset sqa --lr 3e-05 --pos --ff2 --method npo_KL
-```
-
-首次运行会从 Hugging Face 下载模型和数据集，并在项目目录下生成缓存/结果目录，例如 `final_cot/`、`final_results/` 等。
-
-注意：`unlearn.py` 会同时加载当前模型和 oracle model，显存需求较高。RTX 4060 Laptop 8GB 可以完成环境验证，但真实 unlearning 实验可能需要更大显存，或者改用更小的本地/远程模型。
-
-## 7. 中文 C-Eval + Qwen3 复现实验
-
-中文版本在 `parametric-faithfulness-main-cn/`，入口是 `unlearn.py`。该版本使用 Qwen chat template 并设置 `enable_thinking=False`，生成的是可见中文 CoT，不使用 Qwen3 的 hidden thinking 内容。
-
-注意：我在 2026-05-19 检查 Hugging Face 时，官方 `Qwen/Qwen3-3B` 仓库不存在；如果你有本地或镜像中的 3B 权重，可以把 `--model_name` 换成本地路径。官方可用的近似规模模型用 `Qwen/Qwen3-4B`。
-
-在单张 A100 80GB 上可以直接用默认 `--model_device auto --oracle_device auto` 做微调训练；如果要并行，中文入口已支持 `--num_shards` 和 `--shard_idx`，每个 shard 会写独立结果文件，避免并发写冲突。Hugging Face token 建议放在 `HF_TOKEN` 环境变量里，不要写进日志。
-
-当前服务器显存被限制为约 10GB 时，建议先用 CPU oracle 做 smoke test：
+示例命令：
 
 ```bash
-conda activate faith
+cd parametric-faithfulness-main
+python unlearn.py \
+  --model_name meta-llama/Llama-3.2-3B-Instruct \
+  --strategy sentencize --stepwise \
+  --dataset sqa \
+  --lr 3e-05 --pos --ff2 \
+  --method npo_KL
+```
+
+## Extensions
+
+### Chinese C-Eval / Qwen3
+
+目录：
+
+```text
+parametric-faithfulness-main-cn/
+```
+
+该版本将 FUR 迁移到中文 C-Eval 选择题，并适配 Qwen3 chat template。生成可见中文 CoT 时显式关闭 hidden thinking：
+
+```python
+enable_thinking=False
+```
+
+示例：
+
+```bash
 cd parametric-faithfulness-main-cn
 python unlearn.py \
-  --model_name Qwen/Qwen3-1.7B \
-  --dataset ceval \
-  --strategy sentencize --stepwise \
-  --method npo_KL --lr 3e-5 --ff2 \
-  --max_samples 8 --n_unlearn 1 --verify_samples 2 --epochs 1 \
-  --cot_max_new_tokens 160 --eval_max_new_tokens 160 \
-  --new_cot --oracle_device cpu
-```
-
-更大显存环境中跑完整 Qwen3-4B：
-
-```bash
-conda activate faith
-cd parametric-faithfulness-main-cn
-mkdir -p logs
-nohup python -u unlearn.py \
   --model_name Qwen/Qwen3-4B \
   --dataset ceval \
   --strategy sentencize --stepwise \
   --method npo_KL --lr 1e-5 --ff2 \
   --max_samples 250 --n_unlearn 250 --verify_samples 20 --epochs 5 \
   --cot_max_new_tokens 300 --eval_max_new_tokens 300 \
-  --new_cot \
-  > logs/qwen3-4b-ceval-final.log 2>&1 &
+  --new_cot
 ```
 
-完整 Qwen3-8B 只需把 `--model_name` 改成 `Qwen/Qwen3-8B`。运行完成后生成汇总和概率转移图：
+### Selective / Efficient FUR
+
+目录：
+
+```text
+parametric-faithfulness-enhanced/
+```
+
+原始 Full FUR 会对每条 CoT 的所有 reasoning steps 分别 unlearn，代价较高。本扩展加入 step selection：
+
+- `all`: Full FUR，上界；
+- `last`: 只遗忘最后 `top_k` 个 step；
+- `first`: 只遗忘最前 `top_k` 个 step；
+- `random`: 随机选择 `top_k` 个 step；
+- `selected_steps_file`: 从外部 ranker 文件读取 step 选择结果。
+
+示例：
 
 ```bash
-python analyze_results.py \
-  --result_file final_results/ceval/Qwen3-4B/npo_KL_sentencize_s=True_lr=1e-05_rs=1001_n=250_pos=False_ff2=True.out \
-  --out_dir Qwen3-4B
+cd parametric-faithfulness-enhanced
+python unlearn.py \
+  --model_name local_models/Llama-3.2-3B-Instruct \
+  --local_files_only \
+  --dataset openbook \
+  --strategy sentencize --stepwise \
+  --method npo_KL --lr 3e-05 --ff2 \
+  --max_samples 100 --n_unlearn 80 --verify_samples 20 --epochs 2 \
+  --selection_strategy last --top_k 1
 ```
 
-本机已用缓存中的 `Qwen/Qwen3-1.7B` 跑通 `ceval-computer_network` 极小样本 smoke test，示例结果在 `parametric-faithfulness-main-cn/Qwen3-1.7B-smoke/`；也用 `Qwen/Qwen3-8B` 在 A100 默认 GPU device map 上跑通了 trainable+oracle 微调闭环，示例结果在 `parametric-faithfulness-main-cn/Qwen3-8B-smoke-a100/`。如果必须跑 3B，请提供本地模型路径或镜像仓库名；官方 HF 当前可直接替换为 `Qwen/Qwen3-4B` 或 `Qwen/Qwen3-8B`。
+该扩展支持 sharding：
+
+```bash
+python unlearn.py ... --num_shards 3 --shard_idx 0
+```
+
+### Tree-of-Thoughts FUR
+
+目录：
+
+```text
+parametric-faithfulness-ToT/
+```
+
+该扩展将单条 CoT 的 FUR 推广到多路径 reasoning：
+
+- `sample_select`: 采样多条完整 reasoning paths 并选择置信度最高路径；
+- `beam_prune`: 按层扩展 thought，并用答案置信度剪枝；
+- `selected-path FUR`: 只遗忘最终获胜路径；
+- `tree-union FUR`: 将候选路径合并为 forget set。
+
+主要入口：
+
+```text
+tot_generation.py
+unlearn-CoT.py
+unlearn-ToT.py
+analysis_pipeline.py
+```
+
+### DeepSeek-Revision SFT + FUR
+
+目录：
+
+```text
+parametric-faithfulness-SFT/
+```
+
+该扩展研究外部 teacher 修订学生推理后，LoRA-SFT 是否改变学生模型后续 CoT 的参数忠实性。流程为：
+
+1. LLaMA-3B 在 OpenBookQA train 上生成 draft rationale；
+2. DeepSeek API 读取题目、选项和 draft，返回修订后的短 rationale；
+3. 用 gold answer 离线过滤 teacher 输出；
+4. 对 LLaMA-3B 做一次 `down_proj` LoRA-SFT；
+5. Base 与 SFT 模型分别在 OpenBookQA test 上重新生成 CoT；
+6. 分别运行独立 FUR 后测。
+
+一键脚本：
+
+```bash
+cd parametric-faithfulness-SFT
+bash scripts/run_full_experiment.sh
+```
+
+API key 不应写入代码或日志。推荐运行时使用环境变量或本地 `.env`，该文件已被 `.gitignore` 排除。
+
+## Installation
+
+建议使用 Python 3.10 和独立 conda 环境：
+
+```bash
+conda create -y -n faith python=3.10 pip
+conda activate faith
+pip install --no-cache-dir -r requirements.txt
+python -m nltk.downloader punkt punkt_tab
+```
+
+如果使用 POS filtering，需要 spaCy 英文模型。`requirements.txt` 已包含 `en_core_web_sm` 的 wheel URL。
+
+Hugging Face gated 模型需要提前申请权限并登录：
+
+```bash
+huggingface-cli login
+```
+
+或使用临时环境变量：
+
+```bash
+export HF_TOKEN="hf_xxx"
+```
+
+## Data and Results
+
+GitHub 仓库不包含以下内容：
+
+- 模型权重和 LoRA/merged checkpoints；
+- Hugging Face / ModelScope 本地缓存；
+- `final_results/`、`final_cot/`、`artifacts/` 等实验产物；
+- 大体积日志、图表、PDF、report data；
+- `.env`、token、API key。
+
+这些文件会上传到 ModelScope：
+
+```text
+https://www.modelscope.cn/datasets/KouseiAimer/Measuring-Faithfulness-Group27
+```
+
+建议下载结果后放回对应子目录，例如：
+
+```text
+parametric-faithfulness-enhanced/final_results/
+parametric-faithfulness-SFT/artifacts/
+parametric-faithfulness-ToT/final_analysis/
+parametric-faithfulness-main-cn/report/
+```
+
+具体路径以 ModelScope 数据集中的目录结构为准。
+
+## Notes for Reproduction
+
+- FUR 会同时加载 trainable model 和 frozen oracle model，显存需求较高。
+- `--ff2` 只更新 MLP down projection，是本项目多数实验采用的设置。
+- `--pos` 会过滤 function tokens，只对内容词进行 unlearning。
+- 中文 Qwen3 实验不使用 hidden thinking，只测量可见中文 CoT。
+- Selective FUR 的 naive selectors 主要作为 baseline；更强的 deletion/verifier ranker 是后续改进方向。
+
+## Citation
+
+```text
+Tutek, M., Chaleshtori, F. H., Marasovic, A., & Belinkov, Y. (2025).
+Measuring Faithfulness of Chains of Thought by Unlearning Reasoning Steps.
+arXiv:2502.14829.
+```
+
+官方代码库：
+
+```text
+https://github.com/technion-cs-nlp/parametric-faithfulness
+```

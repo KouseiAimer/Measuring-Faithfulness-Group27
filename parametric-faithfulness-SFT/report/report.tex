@@ -1,0 +1,253 @@
+\documentclass[UTF8,fontset=fandol,10pt,a4paper]{ctexart}
+
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{url}
+\usepackage[colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!65!black,citecolor=blue!55!black]{hyperref}
+\usepackage{fancyhdr}
+
+\graphicspath{{figures/}}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.25em}
+\setlength{\headheight}{14pt}
+\renewcommand{\arraystretch}{1.12}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{DeepSeek-CoT SFT 与参数忠实性}
+\rhead{\thepage}
+
+\title{\bfseries 以 DeepSeek 修订思维链进行一次 SFT 后的\\LLaMA-3B 参数忠实性分析报告}
+\author{基于 Parametric Faithfulness FUR 协议的扩展实验}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+本报告考察一个受资源与周期约束的扩展实验：使用 \texttt{deepseek-v4-pro} 修订
+LLaMA-3B 在 OpenBookQA 上产生的思维链（Chain-of-Thought, CoT），随后进行一次
+LoRA-SFT，并按照 Tutek 等人提出的通过遗忘推理步骤评测忠实性
+（Faithfulness by Unlearning Reasoning Steps, FUR）协议评估参数忠实性。
+SFT 后，Direct/CoT 准确率分别从 70.00\%/73.00\%
+变化到 73.00\%/77.00\%，平均 CoT 步数由 6.37 降为 3.12。FUR 的控制指标
+Efficacy 与 Specificity 分别由 92.58\%/94.04\% 升至 97.62\%/98.79\%。
+然而，在双方均满足 Direct--CoT 一致性的 75 道严格配对题上，FF-HARD 改变量为
+$-4.00$ 百分点（95\% bootstrap CI $[-16.00,8.00]$），FF-SOFT 改变量为
+$+1.12$ 百分点（95\% bootstrap CI $[-7.95,9.95]$）。因此，本实验支持
+``蒸馏 SFT 令推理更紧凑、FUR 干预更有效且更局部''，但尚不足以确认参数忠实性
+获得稳定提升。
+\end{abstract}
+
+\section{研究问题与评价逻辑}
+
+Tutek 等人\cite{tutek2025}指出，语言模型生成的解释可能与其参数中实际支持答案的
+知识不一致。该论文以 FUR 对某个 CoT 步骤表达的事实进行定向遗忘：若移除该事实会
+导致原答案概率下降或答案翻转，并且对保留题影响有限，则该 CoT 步骤更可能反映了
+模型真实使用的参数知识。本实验在相同问题上比较未经训练的 Base 模型与仅接受一次
+Teacher-CoT SFT 的模型，研究以下问题：
+
+\begin{enumerate}
+    \item 蒸馏式 SFT 是否改善任务能力以及 Direct 答案与 CoT 答案的一致性；
+    \item SFT 是否使 FUR 的干预具备足够高的有效性与特异性；
+    \item 在排除模型答案不一致造成的混淆后，参数忠实性指标是否提高。
+\end{enumerate}
+
+令 $p_0(y)$ 表示遗忘前原预测选项的概率，$p_e(y)$ 表示对某一 CoT 步骤执行第
+$e$ 个遗忘 epoch 后该选项的概率。本文沿用论文中的两类忠实性结果：
+\begin{align}
+    \mathrm{FF\text{-}SOFT}(q) &=
+    \max_{s,e}\left[p_0(y_q)-p_{s,e}(y_q)\right]\times 100, \\
+    \mathrm{FF\text{-}HARD}(q) &=
+    \mathbb{I}\left[\exists s,e:\arg\max_y p_{s,e}(y)
+    \ne \arg\max_y p_0(y)\right]\times 100 .
+\end{align}
+其中 $s$ 为 CoT 的可遗忘步骤。FF-SOFT 衡量原答案概率可被移除的幅度，
+FF-HARD 衡量是否最终越过决策边界。按照原协议，主要忠实性结果优先报告
+Direct 答案与 CoT 答案一致的问题，以免对一条并未解释原始答案的 CoT 进行
+不合理归因。
+
+遗忘是否可解释还取决于两个控制指标。Efficacy 测量目标 CoT 步骤在遗忘后的
+对数概率下降程度；Specificity 测量保留题上的初始预测是否保持不变。高
+Efficacy 与高 Specificity 表明干预确实移除了目标信息，而不是造成广泛模型退化。
+
+\section{实验设置与完整性审计}
+
+\input{tables/table_training.tex}
+
+训练阶段使用 OpenBookQA 训练集中的 2000 个问题。Base LLaMA-3B 首先生成
+学生草稿；Teacher 仅对草稿进行修订并提供可监督的简洁推理，经过正确答案、
+格式、答案泄漏以及句数/长度规则过滤后进入 SFT。评估完全独立于训练样本：
+在 OpenBookQA test 中固定抽取 100 道目标题和 20 道保留题，Base 与 SFT
+模型使用同一题目与同一 FUR 超参数。
+
+\input{tables/table_integrity.tex}
+
+表~\ref{tab:integrity} 显示所有预期输出均完整写入；Base 与 SFT 的有效 FUR
+步骤数不同并非缺失数据，而是因为 SFT 生成的 CoT 本身更短，从而通过可遗忘
+步骤过滤的步骤更少。统计脚本逐题读取原始 JSONL，并对每个有效步骤的
+5 个遗忘 epoch 重新计算全部指标。
+
+\section{蒸馏数据质量}
+
+\input{tables/table_teacher.tex}
+
+Teacher 修订的接受率为 92.60\%，说明生成管线能以较低废弃率形成训练数据。
+最主要的拒绝原因为 Teacher 最终答案不正确（4.40\%），这是必须排除的噪声：
+将错误的解释用于 SFT 会同时污染答案能力和后续忠实性解释。JSON 格式失败及
+答案泄漏分别仅占 1.75\% 和 0.65\%，表明结构化输出与防止 CoT 直接暴露
+选择标签的过滤发挥了作用。最终 1852 条样本用于一次 SFT，因此实验测量的是
+``正确且受约束的 Teacher 推理''的影响，而不是无筛选大模型回答的影响。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.73\linewidth]{teacher_filtering.pdf}
+    \caption{Teacher 修订样本的过滤审计。高接受率保证 SFT 训练规模，而对错误答案
+    和泄漏样本的剔除降低了将教师伪相关模式写入模型的风险。}
+    \label{fig:teacher}
+\end{figure}
+
+\section{任务能力与思维链形态}
+
+\input{tables/table_capability.tex}
+
+SFT 后 Direct 准确率上升 3.00 百分点，CoT 准确率上升 4.00 百分点，
+Direct--CoT 一致率上升 3.00 百分点。由于仅有 100 道目标题，这些能力提升
+在配对检验中尚不能视为确定性结论（见表~\ref{tab:paired}），但其方向与
+Teacher 提供更规范推理的训练目标相符。
+
+更明确的效应来自 CoT 形态：平均步骤减少 3.25 步，平均词数减少 40.84 词，
+配对 bootstrap 置信区间均不跨越零。Teacher 修订将冗长或重复的学生解释
+压缩为较短的推理路径，使得 FUR 可干预步骤由 Base 的 495 个降至 SFT 的
+311 个。这一现象有双重含义：较短 CoT 便于定位单条事实，也可能将多个证据
+压入同一稳定步骤，改变 FF-HARD 越过决策边界的机会。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.84\linewidth]{cot_compactness.pdf}
+    \caption{Base 与 SFT 模型生成 CoT 的步骤数与词数分布。SFT 主要可观察变化是
+    推理长度系统性收缩。}
+    \label{fig:cot_length}
+\end{figure}
+
+\section{FUR 控制有效性}
+
+\input{tables/table_controls.tex}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.47\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{eff_spec_faithfulness.pdf}
+        \caption{论文式 Efficacy--Specificity 控制图。点面积编码 FF-HARD。}
+        \label{fig:effspec}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.50\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{unlearning_trajectories.pdf}
+        \caption{随遗忘 epoch 变化的控制轨迹。}
+        \label{fig:trajectory}
+    \end{subfigure}
+    \caption{FUR 干预的有效性与特异性。SFT 点同时向右上方移动，并在各 epoch
+    保持更高 Specificity，说明定向遗忘在该模型上更容易成功且副作用更小。}
+    \label{fig:control}
+\end{figure}
+
+Base 的平均 Specificity 为 94.04\%，低于图~\ref{fig:effspec} 所示的
+95\% 参考线；SFT 达到 98.79\%，同时 Efficacy 达到 97.62\%。这说明
+SFT 之后观察到的忠实性信号具有更好的干预控制基础：目标步骤的概率能够被明显
+降低，而保留题预测大多不受扰动。一个需谨慎对待的机制解释是，本实验的 SFT
+LoRA 与 FUR 均作用于 \texttt{down\_proj} 相关参数，SFT 可能提高了该参数子空间
+对遗忘优化的响应性。因此，更高控制指标证明本次 FUR 更可靠，并不单独等价于
+模型内部推理机制更真实。
+
+\section{参数忠实性结果}
+
+\input{tables/table_faithfulness.tex}
+\input{tables/table_deltas.tex}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.47\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{faithfulness_comparison.pdf}
+        \caption{按各自一致题计算的主要分数。}
+        \label{fig:faith_bar}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.47\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{paired_soft_distribution.pdf}
+        \caption{共同一致题的逐题 FF-SOFT 对比。}
+        \label{fig:paired_scatter}
+    \end{subfigure}
+    \caption{忠实性指标比较。FF-HARD 与 FF-SOFT 给出不同方向的结果，提示不可
+    仅凭单一指标声称 SFT 已提升参数忠实性。}
+    \label{fig:faithfulness}
+\end{figure}
+
+在论文协议的各自一致题口径下，SFT 的 FF-SOFT 由 54.09\% 上升至 56.07\%，
+但 FF-HARD 由 70.73\% 降至 65.88\%。两者并不矛盾：FF-SOFT 只要求原答案
+概率发生下降；FF-HARD 还要求下降量足以越过最大概率的决策边界。本实验中，
+SFT 在共同一致题上的初始预测 margin 平均增加 9.30 百分点，说明即便可移除
+的概率质量略有增加，更稳定的初始答案仍可能减少最终翻转数量。
+
+另一个解释来自 CoT 压缩。较少步骤减少了 ``至少存在一个步骤引发答案翻转''
+这一事件的尝试次数，从而可能机械性压低 FF-HARD；与此同时，更集中步骤仍能
+引起较大的概率下降。因此，比较不同长度 CoT 时，FF-SOFT 与控制图应与
+FF-HARD 共同阅读。
+
+\section{配对统计分析}
+
+各模型自己的 Direct--CoT 一致题数量不同（Base 为 82，SFT 为 85），直接对
+这两个分母做差会混入样本组成变化。为提高可比性，本报告预先将双方均一致的
+75 道题作为严格配对子集，并在同一题上计算 SFT 减 Base 的差值。连续指标使用
+10,000 次配对 bootstrap 得到 95\% 百分位置信区间；二元指标另外使用双侧
+exact McNemar 检验，其中 ``+/-'' 表示 SFT 相对 Base 的改善题数/退化题数。
+
+\input{tables/table_paired.tex}
+
+配对结果包含三点专业判断：
+\begin{enumerate}
+    \item CoT 步数与词数的收缩具有清晰区间证据，可视为本次 SFT 的稳定行为改变；
+    \item FF-HARD 在共同一致题上降低 4.00 百分点，但置信区间
+    $[-16.00,8.00]$ 跨零，McNemar $p=0.678$，不能认为存在稳定恶化或改善；
+    \item FF-SOFT 增加 1.12 百分点，区间 $[-7.95,9.95]$ 同样跨零；
+    相比之下，初始 margin 的显著增加解释了为何软概率变化未转化为更多硬翻转。
+\end{enumerate}
+
+\section{结论、限制与后续检验}
+
+本次一次性 SFT 已实现一个完整且可复查的实验闭环：Teacher 修订数据经质量过滤，
+SFT 后模型在相同测试题上接受与 Base 完全对应的 FUR 评估，原始逐步骤结果、
+统计表格以及矢量图均已保留。从观测数据看，蒸馏 CoT SFT 最确定的作用是生成
+更短、更集中且更易被局部干预的推理；它同时使 FUR 的 Efficacy 与 Specificity
+进入更理想范围。对于核心问题``参数忠实性是否提升''，FF-HARD 与 FF-SOFT 的
+配对证据尚不充分，应报告为未确认，而非正面结论。
+
+本结论受到以下限制。第一，仅有一个随机种子和 100 道目标题，统计功效有限。
+第二，尚无使用学生原始 CoT 进行 SFT 的对照臂，不能将 Teacher 质量效应与一般
+SFT 效应分离。第三，训练适配器与 FUR 干预都集中于 \texttt{down\_proj}，这会
+强化 ``可被遗忘'' 与 ``真实支持答案'' 之间的混淆。第四，本轮只覆盖
+OpenBookQA，尚未检验跨数据集迁移。
+
+在后续计算预算允许时，最关键的补充不是立即扩展更复杂的 RL，而是增加两组控制：
+同规模原始学生 CoT-SFT 与答案正确但不含详细推理的 SFT，并在 ARC-Challenge
+上复用相同 FUR 协议。这样能够判断当前的控制性改善究竟来源于 Teacher 推理结构，
+还是仅来源于训练与干预参数空间的一致性。
+
+\begin{thebibliography}{9}
+\bibitem{tutek2025}
+Tutek, M., Chaleshtori, F. H., Marasović, A., \& Belinkov, Y.
+\newblock Measuring Chain of Thought Faithfulness by Unlearning Reasoning Steps.
+\newblock arXiv:2502.14829, 2025.
+\newblock \url{https://arxiv.org/abs/2502.14829}.
+\end{thebibliography}
+
+\end{document}

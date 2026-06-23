@@ -36,8 +36,10 @@
 /parametric-faithfulness-enhanced/.hf_cache/
 /parametric-faithfulness-enhanced/.hf_datasets_cache/
 /parametric-faithfulness-enhanced/local_models/
+/parametric-faithfulness-enhanced/local_datasets/
 /parametric-faithfulness-enhanced/logs/
 /parametric-faithfulness-enhanced/enhanced_runs/
+/parametric-faithfulness-enhanced/paper_runs/
 /parametric-faithfulness-enhanced/final_results/
 /parametric-faithfulness-enhanced/final_cot/
 /parametric-faithfulness-enhanced/atomic_cot/
@@ -49,17 +51,62 @@
 /parametric-faithfulness-enhanced/minimal_mistake_results/
 /parametric-faithfulness-enhanced/LM_judge_cot/
 /parametric-faithfulness-enhanced/smoke_*.json
-/parametric-faithfulness-enhanced/result_enhanced/*.csv
-/parametric-faithfulness-enhanced/result_enhanced/*.json
 /parametric-faithfulness-enhanced/result_enhanced/*.jsonl
 /parametric-faithfulness-enhanced/result_enhanced/*.out
-/parametric-faithfulness-enhanced/result_enhanced/*.pdf
 /parametric-faithfulness-enhanced/result_enhanced/*.aux
 /parametric-faithfulness-enhanced/result_enhanced/*.log
 /parametric-faithfulness-enhanced/result_enhanced/*.nav
 /parametric-faithfulness-enhanced/result_enhanced/*.snm
 /parametric-faithfulness-enhanced/result_enhanced/*.toc
-/parametric-faithfulness-enhanced/result_enhanced/beamer_preview/
+
+# ToT extension generated artifacts
+/parametric-faithfulness-ToT/local_models/
+/parametric-faithfulness-ToT/local_datasets/
+/parametric-faithfulness-ToT/local_hf_cache/
+/parametric-faithfulness-ToT/logs/
+/parametric-faithfulness-ToT/final_cot_CoT/
+/parametric-faithfulness-ToT/final_tree_ToT/
+/parametric-faithfulness-ToT/final_result_CoT/
+/parametric-faithfulness-ToT/final_result_ToT/
+/parametric-faithfulness-ToT/final_result_ToT_union/
+/parametric-faithfulness-ToT/LM_judge_cot/
+/parametric-faithfulness-ToT/minimal_mistake_results/
+/parametric-faithfulness-ToT/smoke_cot_CoT/
+/parametric-faithfulness-ToT/smoke_result_CoT/
+/parametric-faithfulness-ToT/smoke_tree_ToT/
+/parametric-faithfulness-ToT/smoke_tree_ToT_masked/
+/parametric-faithfulness-ToT/smoke_splits/
+/parametric-faithfulness-ToT/report/*.aux
+/parametric-faithfulness-ToT/report/*.log
+/parametric-faithfulness-ToT/report/*.out
+/parametric-faithfulness-ToT/PPT/*.aux
+/parametric-faithfulness-ToT/PPT/*.log
+/parametric-faithfulness-ToT/PPT/*.nav
+/parametric-faithfulness-ToT/PPT/*.out
+/parametric-faithfulness-ToT/PPT/*.snm
+/parametric-faithfulness-ToT/PPT/*.toc
+
+# DeepSeek-revision SFT extension generated artifacts
+/parametric-faithfulness-SFT/artifacts/
+/parametric-faithfulness-SFT/logs/
+/parametric-faithfulness-SFT/local_models/
+/parametric-faithfulness-SFT/local_datasets/
+/parametric-faithfulness-SFT/report/*.aux
+/parametric-faithfulness-SFT/report/*.log
+/parametric-faithfulness-SFT/PPT/*.aux
+/parametric-faithfulness-SFT/PPT/*.log
+/parametric-faithfulness-SFT/PPT/*.nav
+/parametric-faithfulness-SFT/PPT/*.snm
+/parametric-faithfulness-SFT/PPT/*.toc
+
+# Generated Chinese experiment reports
+/parametric-faithfulness-main-cn/report/*.aux
+/parametric-faithfulness-main-cn/report/*.log
+/parametric-faithfulness-main-cn/PPT/*.aux
+/parametric-faithfulness-main-cn/PPT/*.log
+/parametric-faithfulness-main-cn/PPT/*.nav
+/parametric-faithfulness-main-cn/PPT/*.snm
+/parametric-faithfulness-main-cn/PPT/*.toc
 
 # Python/runtime caches
 __pycache__/

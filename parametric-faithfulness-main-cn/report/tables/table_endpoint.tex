@@ -1,0 +1,15 @@
+\begin{table}[H]
+\centering
+\small
+\caption{各结果文件最终 checkpoint 的 endpoint 汇总；此口径与既有 8B 摘要的最终态统计一致。}
+\label{tab:endpoint}
+\begin{tabular}{lrrrrrr}
+\toprule
+实验 & 终点 E & Eff & Spec & FF-HARD(all) & FF-HARD(agree) & Mean soft \\
+\midrule
+Qwen3-8B ($n=250$) & 5 & 71.50 & 96.84 & 9.13\% & 6.93\% & 3.36 \\
+Qwen3-4B ($n=250$) & 5 & 81.50 & 98.56 & 9.57\% & 7.91\% & 4.38 \\
+Qwen3-4B ($n=220$) & 10 & 90.25 & 98.04 & 12.00\% & 10.39\% & 6.08 \\
+\bottomrule
+\end{tabular}
+\end{table}

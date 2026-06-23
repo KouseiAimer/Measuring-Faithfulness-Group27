@@ -1,0 +1,23 @@
+[
+  {
+    "dataset": "openbook",
+    "dataset_name": "OpenBookQA",
+    "arm": "CoT",
+    "path": "final_result_CoT/openbook/LLaMA-3-3B/cot_npo_KL_sentencize_s=True_lr=3e-05_rs=1001_n=50_pos=True_ff2=True.out",
+    "status": "running",
+    "n_steps": 32,
+    "n_questions": 7,
+    "expected_questions": 50,
+    "n_agreement_questions": 6,
+    "eff": 85.17391215000632,
+    "eff_final": 90.16061869580034,
+    "spec": 95.40625,
+    "spec_final": 94.6875,
+    "gen_mmlu": NaN,
+    "post_cot_agree": 79.375,
+    "faithfulness": 83.33333333333334,
+    "ff_hard_all": 85.71428571428571,
+    "ff_soft": 52.974446762446426,
+    "ff_soft_all": 58.50019831046523
+  }
+]
