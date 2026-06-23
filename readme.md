@@ -9,7 +9,7 @@
 - 实现 Selective / Efficient FUR，用更少的 step unlearning 近似 Full FUR；
 - 探索 ToT-FUR 与 DeepSeek-revision SFT 后测两条扩展路线。
 
-代码仓库只保存源码、脚本、文档和轻量示例文件。完整实验结果、模型权重、本地缓存、日志和大体积报告产物不进入 GitHub，统一放在 ModelScope 数据集仓库：
+代码仓库保存源码、脚本、文档、轻量图表和报告。完整 raw 结果、模型权重、本地缓存、日志和大型 artifacts 不进入 GitHub，统一放在 ModelScope 数据集仓库：
 
 https://www.modelscope.cn/datasets/KouseiAimer/Measuring-Faithfulness-Group27
 
@@ -23,8 +23,8 @@ https://www.modelscope.cn/datasets/KouseiAimer/Measuring-Faithfulness-Group27
 ├── parametric-faithfulness-ToT/         # Tree-of-Thoughts FUR 扩展
 ├── parametric-faithfulness-SFT/         # DeepSeek revision SFT + FUR 后测扩展
 ├── requirements.txt                     # Python 依赖
-├── quickstart.md                        # 主要文件和运行链路说明
-├── enhanced.md                          # Efficient FUR 选题与文献整理
+├── quickstart.md                        # 快速运行和文件归档规则
+├── enhanced.md                          # Selective / Efficient FUR 扩展摘要
 └── enhanced2.md                         # Enhanced FUR 实验方案
 ```
 
@@ -199,12 +199,12 @@ export HF_TOKEN="hf_xxx"
 
 ## Data and Results
 
-GitHub 仓库不包含以下内容：
+GitHub 仓库可以保留单文件小于 10MB 的图表、PDF、表格和报告源文件，便于直接查看实验结论。GitHub 不包含以下内容：
 
 - 模型权重和 LoRA/merged checkpoints；
 - Hugging Face / ModelScope 本地缓存；
 - `final_results/`、`final_cot/`、`artifacts/` 等实验产物；
-- 大体积日志、图表、PDF、report data；
+- raw 日志和大体积中间产物；
 - `.env`、token、API key。
 
 这些文件会上传到 ModelScope：
